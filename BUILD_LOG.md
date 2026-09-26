@@ -75,8 +75,25 @@ zip packaged correctly.
   `mf_pllbase` had +77.2 ns slack in phase 0's report. Diagnosis: the
   delta-sigma fractional modulator (`fractional_vco_multiplier("true")`,
   needed to hit 57.272727 MHz precisely) is tight at this output frequency.
-  Fix: switched to integer-N mode (`fractional_vco_multiplier("false")`) —
+  Fix attempted: switched to integer-N mode (`fractional_vco_multiplier("false")`) —
   phase 1 doesn't need bit-exact frequency, so trading precision for a PLL
-  that actually closes timing is the right call. **Did not test this build
-  on hardware** — pushing a known timing failure to real hardware risks a
-  wasted test cycle for no useful information.
+  that actually closes timing seemed like the right call. **Did not test
+  this build on hardware** — pushing a known timing failure to real
+  hardware risks a wasted test cycle for no useful information.
+
+## 2026-09-26 — CI run #6 (36244907813) — failed (Fitter)
+
+Integer-N mode didn't just have tighter timing - it outright rejected the
+request:
+
+```
+Error: PLL Output Counter parameter 'output_clock_frequency' is set to an
+illegal value of '57.272727 MHz' ...
+```
+
+Cause: 57.272727 MHz reduces to a 280/363 ratio of the 74.25 MHz reference -
+not representable by the small integer PLL counters integer-N mode uses.
+Fix: picked a different target frequency instead, one with a genuinely
+clean small-integer ratio to 74.25 MHz - 57.75 MHz = 74.25 x 7/9 exactly,
+about 0.83% off the real hardware's 57.272727 MHz. Irrelevant for this
+gate's purposes. Still integer-N mode.

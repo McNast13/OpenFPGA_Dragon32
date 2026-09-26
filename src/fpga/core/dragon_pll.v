@@ -25,9 +25,18 @@
 // -10.1 ns setup slack on `PLL_OUTPUT_COUNTER|divclk`, vs. +77 ns on the
 // template's own mf_pllbase for the equivalent node) - the delta-sigma
 // fractional modulator appears to be tight at this output frequency.
-// Integer-N mode has simpler internal counter logic and no such modulator;
-// since exact frequency isn't needed here, this trades a little frequency
-// precision for a PLL that actually closes timing. See BUILD_LOG.md.
+// Integer-N mode has simpler internal counter logic and no such modulator.
+//
+// Switching modes alone wasn't enough, though: integer-N mode outright
+// rejected 57.272727 MHz as an "illegal value" - that frequency reduces to
+// a 280/363 ratio of the 74.25 MHz reference, not representable by small
+// integer PLL counters. So the target here is deliberately 57.75 MHz
+// instead: 74.25 MHz x 7/9 exactly, a clean small-integer ratio integer-N
+// mode can hit precisely. That's about 0.83% faster than the real
+// hardware's 57.272727 MHz - irrelevant for phase 1's gate (booting to
+// BASIC), which is why this precision was never required in the first
+// place (see above). Revisit this whole file in phase 2, where video/audio
+// timing precision actually starts to matter.
 //
 
 `default_nettype none
@@ -41,7 +50,7 @@ module dragon_pll (
 );
 
     // outclk_1: same frequency as outclk_0, phase-shifted 90 degrees
-    // (a quarter period at 57.272727 MHz = 1e12/57272727/4 ps = ~4365 ps).
+    // (a quarter period at 57.75 MHz = 1e12/57750000/4 ps = ~4329 ps).
     // Needed for the scaler's DDIO output clock - see core_top.v.
 
     altera_pll #(
@@ -49,10 +58,10 @@ module dragon_pll (
         .reference_clock_frequency("74.25 MHz"),
         .operation_mode("normal"),
         .number_of_clocks(2),
-        .output_clock_frequency0("57.272727 MHz"),
+        .output_clock_frequency0("57.75 MHz"),
         .phase_shift0("0 ps"),
         .duty_cycle0(50),
-        .output_clock_frequency1("57.272727 MHz"), .phase_shift1("4365 ps"), .duty_cycle1(50),
+        .output_clock_frequency1("57.75 MHz"), .phase_shift1("4329 ps"), .duty_cycle1(50),
         .output_clock_frequency2("0 MHz"), .phase_shift2("0 ps"), .duty_cycle2(50),
         .output_clock_frequency3("0 MHz"), .phase_shift3("0 ps"), .duty_cycle3(50),
         .output_clock_frequency4("0 MHz"), .phase_shift4("0 ps"), .duty_cycle4(50),
