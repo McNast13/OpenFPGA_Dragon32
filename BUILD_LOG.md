@@ -217,3 +217,16 @@ to the real path and removing the nested copy; verified by checksum. The
 diagnostic build is now genuinely in place for the next test - worth
 running it now anyway, since it's still useful signal about the real RTL
 regardless of how we got here.
+
+## 2026-09-26 — hardware test (diagnostic build, correctly placed) — yellow
+
+PLL locked, reset released, but the boot ROM was never written into the
+machine at all. See NOTES.md "Boot ROM never loading: the deferload field"
+for the diagnosis: `data.json`'s ROM slot copied `"deferload": true` from
+`../OpenFPGA_ZX-Spectrum`'s working example without also copying the
+explicit `target_dataslot_read` request that core issues to actually
+trigger a deferred slot's transfer. Fix: dropped `deferload` entirely,
+matching `agg23/openfpga-pokemonmini`'s simpler slot (no request needed).
+Rebuilding to test - keeping the diagnostic overlay in place one more
+round rather than reverting to real video, so a persisting yellow (if this
+guess is wrong) is still informative rather than back to a blank gray.

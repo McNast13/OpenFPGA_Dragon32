@@ -4,9 +4,8 @@
         "data_slots": [
             {
                 "name": "Boot ROM",
-                "id": "0x200",
+                "id": 0,
                 "required": true,
-                "deferload": true,
                 "parameters": 10,
                 "filename": "boot.rom",
                 "extensions": ["rom"],

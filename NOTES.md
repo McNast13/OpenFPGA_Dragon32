@@ -209,6 +209,44 @@ Whatever color comes back narrows this down a lot before spending another
 round on a specific fix. Revert to real video passthrough (git history has
 the original version) once the cause is known.
 
+**Result: yellow** (after fixing an unrelated `cp -R` bug that meant the
+real phase 1 build had never actually reached the SD card before this —
+see BUILD_LOG.md). PLL locked, reset released, but the boot ROM was never
+written into the machine at all.
+
+## Boot ROM never loading: the `deferload` field (2026-09-26)
+
+Checked Analogue's own developer docs (`analogue.co/developer/docs/openfpga/...`)
+plus two real cores for how data slot loading actually works:
+
+- **`agg23/openfpga-pokemonmini`**'s "Cartridge" slot (`required: true`,
+  fixed nothing — no `filename`, no `deferload`) loads with zero explicit
+  request from the core — `core_top.v` never references
+  `target_dataslot_read` anywhere in that repo at all.
+- **`dave18/OpenFPGA_ZX-Spectrum`**'s "ROM" slot (`required: true`,
+  `filename: "boot.rom"`, **`deferload: true`**) — its core *does* pull it
+  explicitly: `if (ioctl_id=='h200) target_dataslot_read<=1; ...` with a
+  whole state machine around it, matching the docs' Data Slot Read target
+  command (slot id, slot offset, bridge address, length).
+
+My own `data.json` copied ZX-Spectrum's slot verbatim, `deferload: true`
+included — but never implemented the matching `target_dataslot_read`
+request logic ZX-Spectrum's core actually has. Best explanation:
+`deferload: true` means "don't push this automatically — wait for the core
+to ask," and I copied the flag without copying what it obligates the core
+to do.
+
+Fix: dropped `deferload` from `data.json` entirely, matching
+PokemonMini's simpler, request-free pattern (also simplified `id` from the
+ZX-Spectrum-style `"0x200"` to a plain `0`, matching PokemonMini too —
+`id` is just a 16-bit identifier per the docs, nothing in this core checks
+it). Much lower-risk than implementing a `target_dataslot_read` state
+machine, and matches the officially-simpler intended pattern for a
+`data_loader.sv`-based core.
+
+If yellow persists after this, the next thing to try is implementing the
+explicit request (ZX-Spectrum's state machine is the reference for how).
+
 ## Open items for phase 1
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores
