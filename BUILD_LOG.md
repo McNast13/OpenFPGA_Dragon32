@@ -313,4 +313,9 @@ Found a real gap in round 3's `clk_E` check: it only tested "did it ever
 toggle once", which a single edge at reset release would already satisfy
 without continued toggling. Replaced with a watchdog checking `clk_E` is
 still actively toggling (no more than ~10ms gap) right before the second
-snapshot. Rebuilding to test.
+snapshot.
+
+Also added the same watchdog for `clk_Q` (never tapped before - only
+`clk_E` was checked, but the CPU needs both phases) in the same build,
+combining what would otherwise be two separate hardware round-trips.
+New color: gray (clk_E fine, clk_Q stalled). Rebuilding to test.

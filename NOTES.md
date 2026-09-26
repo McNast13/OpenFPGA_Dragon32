@@ -368,6 +368,16 @@ toggling (no more than ~10ms since its last edge) right before the second
 snapshot, not just "did it ever move." Same white/(reused-colors) scheme
 otherwise.
 
+While waiting on that build, reconsidered rather than immediately queuing
+another round: `clk_E` was the only signal ever tapped from SAM's clock
+generation — never `clk_Q`, the CPU's *other* required phase (per
+`mc6809i.v`'s own clocking comments, both matter). Added the same
+watchdog for `clk_Q` in the same build, so one hardware test now checks
+both rather than needing a separate round if `clk_E` turns out fine and
+`clk_Q` is the actual problem. New color: **gray** (`clk_E` fine, `clk_Q`
+stalled) — distinguishable from white/black by brightness alone, not hue,
+per the colorblind-friendly preference.
+
 ## Open items for phase 1
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores

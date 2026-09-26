@@ -103,7 +103,8 @@ module dragoncoco(
   // the stuck @ screen".
   output       [15:0]  dbg_cpu_addr,
   output              dbg_reset_n,
-  output              dbg_clk_e
+  output              dbg_clk_e,
+  output              dbg_clk_q
 );
 
 
@@ -904,5 +905,6 @@ Cassette_Write CoCo3_Cassette_Write(
 assign dbg_cpu_addr = cpu_addr;
 assign dbg_reset_n = reset_n;
 assign dbg_clk_e = clk_E;
+assign dbg_clk_q = clk_Q;
 
 endmodule
