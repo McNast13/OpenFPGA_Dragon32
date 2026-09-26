@@ -361,3 +361,26 @@ could be), reusing mc6883.vhd's existing-but-unconnected dbg port pattern
 for the wiring. Extended the color scheme with a brightness progression
 (black=t_clks stalled, dark gray=spd_ena stalled instead, gray=clk_E,
 light gray=clk_Q). Rebuilding to test.
+
+## 2026-09-26 — hardware test (t_clks) — black again; pivoted to simulation
+
+Still black. At this point installed GHDL and Icarus Verilog locally
+(see NOTES.md "Pivoting to local simulation" for full details) instead of
+spending more hardware round-trips:
+
+- GHDL simulation of mc6883.vhd (SAM) alone: t_clks/spd_ena/clk_e/clk_q
+  all cycle perfectly for 20us simulated - zero stalling. This means
+  rounds 6-9's "stalled" readings were most likely false negatives from
+  undersampling in my own watchdog (t_clks toggles at 14.85MHz, sampled by
+  a 12.288MHz clock - too close in rate to reliably catch), not real
+  hardware behavior. cpu_addr (changes far slower, ~4.3us/cycle) remains
+  the one trustworthy signal from the color diagnostics.
+- Icarus simulation of mc6809i.v (the CPU) alone, fed the real boot.rom
+  via a simple direct memory model: correctly fetches the real $B3B4
+  vector and executes 130+us of real BASIC boot code with zero freezing.
+
+Both components individually validated correct. Bug is in the integration
+- leading suspect is dragoncoco.sv's rom8_dout2 capture register (a
+  precise ras_n/clk_E-gated latch) vs real BRAM read latency my
+  combinational testbench model doesn't have. Next: extend the simulation
+  with a registered memory model to try to reproduce the freeze locally.

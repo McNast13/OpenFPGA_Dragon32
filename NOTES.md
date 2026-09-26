@@ -317,6 +317,79 @@ lives — or cart/IO/vectors `$C000-FFFF`, including the reset vector at
 |Purple|ROM (`$8000-BFFF`)|
 |Pink|Cart/IO/vectors (`$C000-FFFF`)|
 
+## Pivoting to local simulation (2026-09-26)
+
+After the color-diagnostic rounds ran out of RTL-reading-level theories
+(rounds 6-9 all traced clk_E/spd_ena/t_clks progressively further upstream
+and kept coming back "stalled" with nothing left to blame), installed two
+free simulators locally rather than spending more hardware round-trips:
+
+- **GHDL** (`~/.local/ghdl/bin/ghdl`) — the Homebrew cask is disabled for
+  Gatekeeper reasons, so this was downloaded directly from
+  `github.com/ghdl/ghdl`'s releases (`ghdl-llvm-6.0.0-macos15-aarch64.tar.gz`)
+  and extracted — no Gatekeeper issue since CLI downloads via `gh`/`curl`
+  don't get the quarantine flag browsers set. VHDL 2008/93/87 simulator.
+- **Icarus Verilog** (`brew install icarus-verilog`) — already installed.
+  Verilog/SystemVerilog simulator.
+
+**Test 1 — `mc6883.vhd` (SAM) in isolation, via GHDL.** Wrote a standalone
+testbench driving it exactly like our design does (same ~14.85MHz-equivalent
+clock relationship, reset released after startup, static
+addr/rw_n/turbo/da0/vh2/hs_n). Result: `t_clks`, `spd_ena`, `clk_e`, `clk_q`
+all cycle perfectly and continuously for the full 20µs simulated — **zero
+stalling**. This directly contradicts every "stalled" reading rounds
+6-9 got on real hardware.
+
+**Diagnosis of the contradiction:** `t_clks` toggles on *every single*
+`clk_dragon` cycle (14.85 MHz). The watchdog checks (rounds 6-9) sample it
+through `synch_3` clocked by `clk_core_12288` (12.288 MHz) — a nearly
+identical, unrelated rate. Sampling a signal that fast with a clock that
+close in frequency is exactly the recipe for aliasing/undersampling. **The
+"stalled" readings for clk_E/clk_Q/spd_ena/t_clks across rounds 6-9 were
+most likely false negatives from the diagnostic itself, not real hardware
+behavior.** The one signal in that whole chain that changes slowly enough
+to sample safely is `cpu_addr` (updates once per full 6809 bus cycle,
+roughly every ~4.3µs at our clock rate — nowhere near fast enough to alias
+against a 12.288 MHz sample clock) — so the "frozen at exactly
+$FFFE/$FFFF" finding from round 5 (pink→black) is very likely still
+genuine.
+
+**Test 2 — `mc6809i.v` (the CPU) in isolation, via Icarus Verilog.** Wrote
+a testbench reproducing SAM's exact E/Q timing (validated correct by Test
+1) and a simple direct memory model built from the real `boot.rom` file
+(ROM at `$8000-BFFF`, `$FFF0-FFFF` aliased to the ROM's own last 16 bytes
+— the standard 6883 behavior needed to fetch a reset vector at all). Hit
+an Icarus-specific quirk first (it doesn't like `reg q_r,e_r;` being
+declared *after* its first use inside `mc6809i.v`, even though that's
+valid standard Verilog and Quartus has never complained about it across
+dozens of builds) — worked around with a simulation-only copy with the
+declaration moved earlier; the real repo file is untouched.
+
+Result: the CPU correctly fetched `$FFFE`→`B3`, `$FFFF`→`B4`, jumped to
+`$B3B4` (the real reset vector, confirmed earlier by reading the ROM file
+directly), and kept executing real BASIC boot code — reading/writing PIA
+registers at `$FF00-FF23`, hundreds of instructions — for the full 130+
+µs simulated, with **zero freezing**.
+
+**Where this leaves things:** both SAM and the CPU are now individually
+validated correct in isolation, with realistic inputs. The bug isn't in
+either component's own logic — it's in how they're wired together in the
+real machine, or in something my simple, combinational memory model in
+Test 2 doesn't capture. The leading remaining suspect: real block RAM has
+read latency my testbench's memory model doesn't (`always @(*) d_in =
+read_mem(addr);` is same-cycle/combinational). `dragoncoco.sv` actually
+captures ROM data into `rom8_dout2` (what the CPU really reads) through a
+specifically-gated register:
+`if (ras_n==1 && ras_n_r==0 && clk_E==1) rom8_dout2 <= rom8_dout;` — a
+precise capture window tied to SAM's `ras_n` transition happening while
+`clk_E` is high. If the actual BRAM (`roms_D32`, via `dpram_1r1w.vhd`)
+takes longer to produce valid data than this window assumes, the CPU
+could latch stale/invalid data at exactly the wrong moment. Next step:
+extend the Icarus testbench with a registered (non-combinational) memory
+model matching real BRAM latency, and see if that reproduces the freeze
+in simulation — cheap and fast to iterate on locally before ever touching
+hardware again.
+
 Purple would suggest a stuck loop inside otherwise-valid ROM code; pink
 would point at a bad reset/interrupt vector fetch; either RAM color would
 suggest something jumped into uninitialized memory (a stack problem, or a
