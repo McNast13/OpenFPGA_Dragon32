@@ -37,6 +37,12 @@ converted to `.rbf_r`, and packaged clean.
 - **Output:** `bitstream.rbf_r`, 786,972 bytes. Zip contents verified
   against the expected `Cores/Platforms/Assets` layout — matches.
 
-**Phase 0 gate not yet confirmed on hardware** — the build pipeline works
-end to end, but nobody has copied the zip to a Pocket SD card and looked at
-the screen yet. That's the remaining step.
+## 2026-09-26 — phase 0 gate confirmed on hardware
+
+Copied `Cores/McNast13.Dragon32`, `Platforms/dragon32.json` (+ `_images`)
+and `Assets/dragon32/McNast13.Dragon32` from CI run #2's zip onto the Pocket
+SD card, alongside the existing cores already there (no conflicts). Booted
+on real hardware: gray test pattern confirmed on screen.
+
+**Phase 0 complete.** Toolchain, CI, packaging and SD card install all work
+end to end. Moving to phase 1: get the actual Dragon 32 machine running.
