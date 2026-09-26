@@ -1,0 +1,15 @@
+# Quartus build output (not committed; keep it that way)
+src/fpga/output_files/
+src/fpga/db/
+src/fpga/incremental_db/
+
+# ROMs and games — never committed
+*.rom
+*.ROM
+*.cas
+*.CAS
+*.vdk
+*.VDK
+
+# OS cruft
+.DS_Store
