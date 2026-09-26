@@ -3,6 +3,16 @@
 Working notes for the port. See [docs/PLAN.md](docs/PLAN.md) for the full
 plan.
 
+## Phase 1 status (2026-09-26)
+
+Implemented per the wiring plan below: vendored the confirmed RTL set into
+`src/fpga/core/dragon/`, added `dragon_pll.v` (machine clock) and vendored
+agg23's `data_loader.sv` into `src/fpga/core/pocket_utils/` (boot ROM
+bridge), rewrote `core_top.v`'s video section to instantiate `dragoncoco`
+directly instead of the template's test pattern, and added the boot ROM
+data slot to `data.json`. Not yet confirmed by CI or hardware — that's the
+immediate next step.
+
 ## Phase 0 status
 
 - Repo scaffolded from `open-fpga/core-template`: `src/fpga/{apf,core}`,
@@ -30,17 +40,18 @@ RTL work starts phase 1).
 | `rtl/sam.v` | Memory controller (unused) | Not instantiated — skip |
 | `rtl/mc6847pace.vhd` | Video (6847 VDG) | **Active** (`dragoncoco.sv` instantiates `mc6847pace`, not `mc6847.vhd`). Its `charrom_inst` loads `rtl/mc6847_ntsc.hex` (Intel-hex, 65 lines) as the VDG's built-in character-generator font — this is the chip's own internal ROM content, not user software, but it's still a ROM dump baked into the RTL rather than user-supplied. Flag if this is ever published; it's the one piece of ROM-shaped content the core would ship with |
 | `rtl/mc6847.vhd` | Video (unused) | Not instantiated — skip |
-| `rtl/pia6520.v` | I/O (6821-compatible PIA ×2) | Thomas Skibo's PIA core |
-| `rtl/keyboard.sv` | Keyboard matrix decode | PS/2 scancode → Dragon/CoCo matrix. **We replace this, not reuse it** — it's the MiSTer-specific input path our port swaps for APF/dock-keyboard and d-pad input, and see the licensing note below |
+| `rtl/pia6520.v` | I/O (6821-compatible PIA ×2) | Thomas Skibo's PIA core. Instantiated twice (`pia`, `pia1`) |
+| `rtl/keyboard.sv` | Keyboard matrix decode | **Correction (was wrong above): this is an internal submodule of `dragoncoco.sv` itself** (`keyboard kb(...)`, line 688), not something the MiSTer wrapper owns — `dragoncoco.sv`'s top-level `ps2_key` input flows straight into it, and it drives the key matrix that feeds the PIAs internally. We can't swap it out without also reimplementing its scancode→matrix logic, so it's vendored as-is. Its license ("non-commercial use only... a fee may not be charged for redistributions") only restricts *charging money* — a free, personal or later-published-for-free port doesn't trip that clause, so this is fine to keep long-term, not just for now. For phase 1's gate (BASIC banner, no keypress needed) we just drive its `ps2_key` input to "no key pressed" (`11'b0`) |
 | `rtl/dac.sv` | Sound (6-bit DAC) | Alan Steremberg |
-| `rtl/cassette.v`, `rtl/Cassette_Write.sv` | Tape in/out | |
-| `rtl/fdc.sv`, `rtl/wd1793.sv` | Disk controller | Not needed for v1 (Dragon 32 has no disk drive stock); deferred |
-| `rtl/dpram.vhd` (top level), `rtl/dpram_1r1w.vhd` | RAM | Vendor memory primitives — check against Pocket's device family in phase 1 |
-| `rtl/ram.v`, `rtl/rom.v`, `rtl/sprom.vhd`, `rtl/chrrom.v` | RAM/ROM wrappers | |
-| `rtl/pll/`, `rtl/pll.v`, `rtl/pll.qip` | Clocking | MiSTer-specific PLL IP; replaced by the APF template's `mf_pllbase` |
-| `rtl/OVO.vhd` | On-screen overlay (cassette counter) | MiSTer OSD-adjacent; likely dropped, re-add via APF's own OSD path if wanted |
-| `rtl/ttl_74LS138.vhd`, `rtl/acia.sv`, `rtl/ps2.v`, `rtl/uart_rx.v`, `rtl/square_gen.v` | Glue logic | Check usage in `dragoncoco.sv` before deciding to port each |
-| `rtl/dragoncoco.sv` | Machine top level | The actual CoCo/Dragon machine wrapper — this is what gets instantiated inside our `core_top.v` in phase 1, in place of `CoCo2.sv`'s MiSTer wrapper |
+| `rtl/acia.sv` | Serial (ACIA) | Instantiated (`acia acia(...)`), but only reachable via `acia_cs`, which is gated `dragon64 ? ... : 1'b0` — dead code with `dragon64=0`. Vendored anyway since it's referenced unconditionally at elaboration time |
+| `rtl/fdc.sv` | Disk controller | Instantiated (`fdc coco_fdc(...)`) but gated by `disk_cart_enabled` (tied `0` for v1 — no disk support yet). Still needed for the module to elaborate; not functionally exercised until disk support lands |
+| `rtl/Cassette_Write.sv` | Tape write | Instantiated (`Cassette_Write CoCo3_Cassette_Write(...)`) |
+| `rtl/dpram.vhd` | RAM (generic dual-port, Altera `altsyncram`) | Used for the 64K-addressable work RAM (`ram1`) and the cartridge ROM window (`romC`) — both fit comfortably on-chip on the Pocket's Cyclone V (see phase 1 plan below) |
+| `rtl/dpram_1r1w.vhd` | ROM (generic 1-read/1-write dual-port) | Used for each boot ROM slot (`roms_coco2`, `roms_D32`, `roms_D64`, `roms_disk`) and, inside `mc6847pace.vhd`, for its line buffer |
+| `rtl/sprom.vhd` | ROM (single-port, Altera `altsyncram`) | Used inside `mc6847pace.vhd` for the character-generator ROM (`charrom_inst`, loads `mc6847_ntsc.hex`) |
+| `rtl/ttl_74LS138.vhd` | Glue (3-to-8 decoder) | Instantiated as `ttl_74ls138_p` |
+| `rtl/CPU09/*.vhd`, `rtl/sam.v`, `rtl/mc6847.vhd`, `rtl/cassette.v`, `rtl/ram.v`, `rtl/rom.v`, `rtl/chrrom.v`, `rtl/wd1793.sv`, `rtl/OVO.vhd`, `rtl/ps2.v`, `rtl/uart_rx.v`, `rtl/square_gen.v`, `rtl/pll*` | Not needed | Confirmed not instantiated by `dragoncoco.sv` (checked via a full instantiation scan, not just the earlier spot-check) — skip all of these |
+| `rtl/dragoncoco.sv` | Machine top level | The actual CoCo/Dragon machine wrapper — instantiated as-is inside our `core_top.v` in phase 1, in place of `CoCo2.sv`'s MiSTer wrapper. Full dependency list above is now confirmed complete via a scan for every module instantiation in the file |
 | `sys/` (53 files) | MiSTer framework (`hps_io`, scaler, PLL, OSD) | Confirmed: dropped entirely, replaced by APF |
 | `roms/` | ROM helper module (`rom_chrrom.v`) + character ROM | Character ROM (`chrrom`) is font data — need to confirm it's not a copy of the real 6847 font ROM before reuse; treat as ROM-adjacent and check |
 | `releases/*.rom`, `releases/*.rbf` | **Not source** | The upstream repo ships prebuilt boot ROM binaries and bitstreams here — real ROM dumps, not placeholders. **Do not vendor this folder into our repo under any circumstance** — it's exactly the ROM content our own "no ROMs" rule excludes |
@@ -63,11 +74,11 @@ declared in each file's header comment:
 **Working conclusion:** treat the whole `rtl/` tree as GPLv2-or-later for our
 purposes (that's the license on the actual top-level file, `CoCo2.sv`, and
 the most restrictive license present among files with explicit terms other
-than the two special cases below), and keep every file's original header
-intact when vendoring in phase 1. Two exceptions to flag if this is ever
-published: `keyboard.sv`'s non-commercial clause (moot — not reused) and the
-unclear terms on `mc6809i.v`/`dac.sv` (reused as-is; worth a note in
-whatever public README this core ships with, or a message to the authors).
+than the exceptions below), and keep every file's original header intact
+when vendoring. Two things worth a note in whatever public README this core
+ships with, if published: `keyboard.sv`'s non-commercial clause (satisfied —
+we never charge for this) and the unclear terms on `mc6809i.v`/`dac.sv`
+(reused as-is; worth a message to the authors if this goes public).
 
 Already-confirmed-clean sources for everything else the port pulls in:
 
@@ -92,9 +103,69 @@ inventory table above. Only `rtl/`, `CoCo2.sv` (for reference), and
   for v1, since it's the most natural way to use Dragon BASIC.
 - **Machine scope:** stays Dragon 32 only for now.
 
+## Phase 1 wiring plan (2026-09-26)
+
+`dragoncoco.sv`'s full top-level port list is now mapped against what
+`core_top.v` (from the template) already provides:
+
+- **Machine clock:** `dragoncoco.sv`'s `clk` wants ~57.272727 MHz (16× NTSC
+  colorburst — a real hardware constant, not tied to any particular
+  reference clock rate). The template's existing `mf_pllbase` IP only
+  outputs 12.288 MHz and some 133 MHz taps, none close. Rather than
+  reconfigure that IP (which is a frozen, pre-generated variation), added a
+  second, new PLL instance (`dragon_pll.v`) that directly parameterizes
+  Quartus's `altera_pll` primitive the same way `mf_pllbase_0002.v` already
+  does — with plain frequency-string generics (`reference_clock_frequency`,
+  `output_clock_frequency0`) rather than pre-baked M/N/C values. Quartus's
+  own synthesis resolves the actual PLL counters from those strings at
+  compile time, the same as the existing IP already does — no IP wizard or
+  local Quartus needed, confirmed by reading how the template's own PLL is
+  built. Feeds `clk_74a` (74.25 MHz) in, `dragoncoco.clk` out.
+  - Getting this frequency bit-exact isn't necessary for phase 1's gate
+    (BASIC banner, not broadcast-accurate video) — that precision matters
+    for phase 2's video/audio-timing gate, not this one. If phase 1's
+    picture looks unstable through the scaler, revisit here first.
+- **`CLK50MHZ`:** only reaches live logic through `fdc.sv`'s disk timing,
+  which is dead code while `disk_cart_enabled = 0`. Tied directly to
+  `clk_74a` rather than generating a third clock domain for no functional
+  reason yet.
+- **Boot ROM loading:** `dragoncoco.sv` expects MiSTer's `ioctl_*` streaming
+  protocol (`ioctl_data/addr/wr/download/index`), not APF's bridge/data-slot
+  protocol. agg23's `data_loader.sv` (MIT, from `analogue-pocket-utils`)
+  translates APF data-slot writes into exactly this ioctl shape — that's the
+  whole reason the plan called for reusing it instead of writing a new
+  bridge. One data slot, feeding `ioctl_index = 8'h40` (`{BOOT1, BOOT}` per
+  `dragoncoco.sv`'s own constants — `BOOT1=2'd1`, `BOOT=6'd0`) to land the
+  ROM in the Dragon 32 boot slot specifically (not the CoCo2/Dragon64/disk
+  slots also multiplexed on that same bus).
+- **Video:** `dragoncoco.sv` already outputs `red/green/blue[7:0]` and
+  `hblank/vblank/hsync/vsync` directly — no need for the template's own
+  test-pattern generator or its 12.288 MHz video clock. Plan is to drive
+  `video_rgb`/`video_de`/`video_hs`/`video_vs` straight from the machine's
+  own signals, clocked by the machine's own `clk` (`video_de = ~hblank &
+  ~vblank`), rather than resample into the template's unrelated timing.
+- **Controller input:** `cont1_key`'s d-pad bits map to `joy1`'s digital
+  bits, `joy_use_dpad = 1`. `joya1/joya2` (analog) left at 0 for now.
+- **Keyboard (`ps2_key`):** driven to `11'b0` (no key ever pressed) for
+  phase 1 — the Dragon 32 boots straight to its BASIC prompt without
+  needing a keypress, so real key injection is still phase 3's problem, not
+  this gate's.
+- **Tied off / deferred, all safe because their gating signals are 0:**
+  `disk_cart_enabled=0` (disk), `casdout/cass_snd/CASS_REWIND_RECORD=0`
+  (tape in), `img_mounted/img_readonly/img_size/sd_ack/sd_buff_*=0` and the
+  `sd_lba/sd_rd/sd_wr/sd_buff_din` outputs left unconnected (disk SD block
+  interface — `fdc.sv` still elaborates and runs, just produces nothing
+  anyone reads), `roms_reset` tied to the core's reset.
+- **Cartridge:** no data slot yet in phase 1 (that's phase 3's "loading and
+  control" milestone) — `load_cart` will simply never fire, so `romC`
+  reads back whatever the (empty, `cart_loaded=0`) cart RAM holds. Harmless
+  for the boot-to-BASIC gate.
+
 ## Open items for phase 1
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores
-  (input plan, above).
+  (input plan, above) — needed for phase 3, not this gate.
 - `roms/chrrom` — check what this actually contains before deciding whether
-  it's reusable font data or something closer to ROM content.
+  it's reusable font data or something closer to ROM content. Not used by
+  the active `mc6847pace.vhd` path (it uses `sprom`/`mc6847_ntsc.hex`
+  instead), so not blocking phase 1.

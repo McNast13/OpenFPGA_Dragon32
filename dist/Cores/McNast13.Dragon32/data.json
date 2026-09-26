@@ -1,6 +1,17 @@
 {
     "data": {
         "magic": "APF_VER_1",
-        "data_slots": []
+        "data_slots": [
+            {
+                "name": "Boot ROM",
+                "id": "0x200",
+                "required": true,
+                "deferload": true,
+                "parameters": 10,
+                "filename": "boot.rom",
+                "extensions": ["rom"],
+                "address": "0x00000000"
+            }
+        ]
     }
 }

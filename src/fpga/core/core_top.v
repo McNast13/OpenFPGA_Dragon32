@@ -496,109 +496,171 @@ core_bridge_cmd icb (
 
 
 
-// video generation
-// ~12,288,000 hz pixel clock
+// Dragon 32 machine clock
 //
-// we want our video mode of 320x240 @ 60hz, this results in 204800 clocks per frame
-// we need to add hblank and vblank times to this, so there will be a nondisplay area. 
-// it can be thought of as a border around the visible area.
-// to make numbers simple, we can have 400 total clocks per line, and 320 visible.
-// dividing 204800 by 400 results in 512 total lines per frame, and 240 visible.
-// this pixel clock is fairly high for the relatively low resolution, but that's fine.
-// PLL output has a minimum output frequency anyway.
+// dragoncoco.sv (and everything inside it) is a single-clock-domain design
+// clocked at ~57.272727 MHz (16x NTSC colorburst - a real hardware constant
+// of the machine, unrelated to the Pocket's own clocking). Derived from the
+// APF system reference clock via a hand-written altera_pll instance - see
+// dragon_pll.v and NOTES.md for why this didn't need Quartus's IP wizard.
+// outclk_1 is the same frequency, phase-shifted 90 degrees, for the
+// scaler's DDIO output clock (mirrors how mf_pllbase below does the same
+// thing for its own outputs).
 
+    wire    clk_dragon;
+    wire    clk_dragon_90deg;
+    wire    pll_dragon_locked;
 
-assign video_rgb_clock = clk_core_12288;
-assign video_rgb_clock_90 = clk_core_12288_90deg;
-assign video_rgb = vidout_rgb;
-assign video_de = vidout_de;
-assign video_skip = vidout_skip;
-assign video_vs = vidout_vs;
-assign video_hs = vidout_hs;
+dragon_pll dp1 (
+    .refclk    ( clk_74a ),
+    .rst       ( 0 ),
+    .outclk_0  ( clk_dragon ),
+    .outclk_1  ( clk_dragon_90deg ),
+    .locked    ( pll_dragon_locked )
+);
 
-    localparam  VID_V_BPORCH = 'd10;
-    localparam  VID_V_ACTIVE = 'd240;
-    localparam  VID_V_TOTAL = 'd512;
-    localparam  VID_H_BPORCH = 'd10;
-    localparam  VID_H_ACTIVE = 'd320;
-    localparam  VID_H_TOTAL = 'd400;
+    wire    reset_n_dragon;
+synch_3 s_rst_dragon (reset_n, reset_n_dragon, clk_dragon);
 
-    reg [15:0]  frame_count;
-    
-    reg [9:0]   x_count;
-    reg [9:0]   y_count;
-    
-    wire [9:0]  visible_x = x_count - VID_H_BPORCH;
-    wire [9:0]  visible_y = y_count - VID_V_BPORCH;
+// Boot ROM loading: APF bridge writes -> dragoncoco.sv's ioctl_* bus.
+//
+// data_loader (agg23/analogue-pocket-utils, MIT) watches the bridge for
+// writes into the data slot's declared address range and hands them out as
+// a simple write_en/write_addr/write_data stream in our clock domain - see
+// dist/Cores/McNast13.Dragon32/data.json for the matching slot ("address":
+// "0x00000000", so ADDRESS_MASK_UPPER_4 is 0 here) and Assets/dragon32/
+// McNast13.Dragon32/ for where the user's own boot.rom lands.
+//
+// ioctl_index is fixed at 8'h40 ({BOOT1, BOOT} per dragoncoco.sv's own
+// constants) so every write lands in the Dragon 32 boot ROM slot
+// specifically, not the CoCo2/Dragon64/disk slots multiplexed on the same
+// bus inside the machine.
 
-    reg [23:0]  vidout_rgb;
-    reg         vidout_de, vidout_de_1;
-    reg         vidout_skip;
-    reg         vidout_vs;
-    reg         vidout_hs, vidout_hs_1;
-    
-    reg [9:0]   square_x = 'd135;
-    reg [9:0]   square_y = 'd95;
+    wire            rom_wr;
+    wire    [13:0]  rom_addr;
+    wire    [7:0]   rom_data;
 
-always @(posedge clk_core_12288 or negedge reset_n) begin
+data_loader #(
+    .ADDRESS_MASK_UPPER_4 ( 4'h0 ),
+    .ADDRESS_SIZE         ( 14 ),
+    .WRITE_MEM_CLOCK_DELAY( 12 ),
+    .WRITE_MEM_EN_CYCLE_LENGTH( 5 )
+) rom_data_loader (
+    .clk_74a               ( clk_74a ),
+    .clk_memory             ( clk_dragon ),
 
-    if(~reset_n) begin
-    
-        x_count <= 0;
-        y_count <= 0;
-        
-    end else begin
-        vidout_de <= 0;
-        vidout_skip <= 0;
-        vidout_vs <= 0;
-        vidout_hs <= 0;
-        
-        vidout_hs_1 <= vidout_hs;
-        vidout_de_1 <= vidout_de;
-        
-        // x and y counters
-        x_count <= x_count + 1'b1;
-        if(x_count == VID_H_TOTAL-1) begin
-            x_count <= 0;
-            
-            y_count <= y_count + 1'b1;
-            if(y_count == VID_V_TOTAL-1) begin
-                y_count <= 0;
-            end
-        end
-        
-        // generate sync 
-        if(x_count == 0 && y_count == 0) begin
-            // sync signal in back porch
-            // new frame
-            vidout_vs <= 1;
-            frame_count <= frame_count + 1'b1;
-        end
-        
-        // we want HS to occur a bit after VS, not on the same cycle
-        if(x_count == 3) begin
-            // sync signal in back porch
-            // new line
-            vidout_hs <= 1;
-        end
+    .bridge_wr              ( bridge_wr ),
+    .bridge_endian_little   ( bridge_endian_little ),
+    .bridge_addr            ( bridge_addr ),
+    .bridge_wr_data         ( bridge_wr_data ),
 
-        // inactive screen areas are black
-        vidout_rgb <= 24'h0;
-        // generate active video
-        if(x_count >= VID_H_BPORCH && x_count < VID_H_ACTIVE+VID_H_BPORCH) begin
+    .write_en   ( rom_wr ),
+    .write_addr ( rom_addr ),
+    .write_data ( rom_data )
+);
 
-            if(y_count >= VID_V_BPORCH && y_count < VID_V_ACTIVE+VID_V_BPORCH) begin
-                // data enable. this is the active region of the line
-                vidout_de <= 1;
-                
-                vidout_rgb[23:16] <= 8'd60;
-                vidout_rgb[15:8]  <= 8'd60;
-                vidout_rgb[7:0]   <= 8'd60;
-                
-            end 
-        end
-    end
-end
+// The Dragon 32 machine itself - ported from MiSTer's CoCo2_MiSTer as-is
+// (see NOTES.md for the full inventory). Phase 1 scope only: get it
+// booting to the BASIC prompt with a real picture. Input (phase 3) and
+// audio (phase 2) are deliberately still tied off/silent here.
+
+    wire [7:0]  dragon_red, dragon_green, dragon_blue;
+    wire        dragon_hblank, dragon_vblank, dragon_hsync, dragon_vsync;
+
+dragoncoco dragon (
+    .clk            ( clk_dragon ),
+    .turbo          ( 1'b0 ),
+    .trig_reset_n   ( reset_n_dragon ),
+    .hard_reset     ( 1'b0 ),
+    .dragon         ( 1'b1 ),
+    .dragon64       ( 1'b0 ),
+    .kblayout       ( 1'b0 ),
+
+    .red            ( dragon_red ),
+    .green          ( dragon_green ),
+    .blue           ( dragon_blue ),
+    .hblank         ( dragon_hblank ),
+    .vblank         ( dragon_vblank ),
+    .hsync          ( dragon_hsync ),
+    .vsync          ( dragon_vsync ),
+
+    .vclk           (  ),
+    .clk_Q_out      (  ),
+
+    .artifact_phase ( 1'b0 ),
+    .artifact_enable( 1'b0 ),
+    .overscan       ( 1'b0 ),
+
+    .uart_din       ( 1'b0 ),
+
+    // keyboard input deferred to phase 3 - no key ever pressed for now,
+    // which is fine: the Dragon boots straight to BASIC without one
+    .ps2_key        ( 11'b0 ),
+
+    // controller input deferred to phase 3
+    .joy1           ( 16'b0 ),
+    .joy2           ( 16'b0 ),
+    .joya1          ( 16'b0 ),
+    .joya2          ( 16'b0 ),
+    .joy_use_dpad   ( 1'b0 ),
+
+    .ioctl_data     ( rom_data ),
+    .ioctl_addr     ( {2'b00, rom_addr} ),
+    .ioctl_download ( 1'b0 ),
+    .ioctl_wr       ( rom_wr ),
+    .ioctl_index    ( 16'h0040 ),
+    .roms_loaded    (  ),
+    .roms_reset     ( ~reset_n_dragon ),
+
+    // tape deferred to phase 3
+    .casdout        ( 1'b0 ),
+    .cas_relay      (  ),
+
+    // audio deferred to phase 2
+    .cass_snd       ( 12'b0 ),
+    .sound          (  ),
+    .sndout         (  ),
+
+    .v_count        (  ),
+    .h_count        (  ),
+    .DLine1         (  ),
+    .DLine2         (  ),
+
+    // disk support not in v1 - fdc.sv still elaborates and runs, it just
+    // never gets used while this stays 0
+    .disk_cart_enabled( 1'b0 ),
+    .CLK50MHZ       ( clk_74a ),
+
+    .img_mounted    ( 5'b0 ),
+    .img_readonly   ( 1'b0 ),
+    .img_size       ( 20'b0 ),
+    .sd_lba         (  ),
+    .sd_blk_cnt     (  ),
+    .sd_rd          (  ),
+    .sd_wr          (  ),
+    .sd_ack         ( 5'b0 ),
+    .sd_buff_addr   ( 9'b0 ),
+    .sd_buff_dout   ( 8'b0 ),
+    .sd_buff_din    (  ),
+    .sd_buff_wr     ( 1'b0 ),
+
+    .CASS_REWIND_RECORD( 1'b0 )
+);
+
+// Straight pass-through to the scaler: dragoncoco.sv already produces
+// digital RGB plus blank/sync signals every clk_dragon cycle, so there's
+// no need for the template's own test-pattern timing generator or its
+// 12.288 MHz video clock - the machine's own native clock drives the
+// scaler's DDIO output directly (see apf_top.v for why outclk_1's 90-degree
+// phase shift specifically matters there).
+
+assign video_rgb_clock = clk_dragon;
+assign video_rgb_clock_90 = clk_dragon_90deg;
+assign video_rgb = {dragon_red, dragon_green, dragon_blue};
+assign video_de = ~(dragon_hblank | dragon_vblank);
+assign video_skip = 1'b0;
+assign video_vs = dragon_vsync;
+assign video_hs = dragon_hsync;
 
 
 
@@ -657,8 +719,11 @@ end
     wire    clk_core_12288_90deg;
     
     wire    pll_core_locked;
+    // status_boot_done/status_setup_done (below) shouldn't report ready
+    // until *both* PLLs - this one and dragon_pll - are locked
+    wire    pll_all_locked = pll_core_locked & pll_dragon_locked;
     wire    pll_core_locked_s;
-synch_3 s01(pll_core_locked, pll_core_locked_s, clk_74a);
+synch_3 s01(pll_all_locked, pll_core_locked_s, clk_74a);
 
 mf_pllbase mp1 (
     .refclk         ( clk_74a ),

@@ -744,6 +744,29 @@ set_global_assignment -name SDC_FILE core/core_constraints.sdc
 set_global_assignment -name SIGNALTAP_FILE core/stp1.stp
 set_global_assignment -name QIP_FILE core/mf_pllbase.qip
 set_global_assignment -name SIP_FILE core/mf_pllbase.sip
+
+# agg23/analogue-pocket-utils (MIT) - APF bridge to ioctl-style write stream
+set_global_assignment -name SYSTEMVERILOG_FILE core/pocket_utils/data_loader.sv
+
+# Dragon 32 machine (ported from MiSTer's CoCo2_MiSTer, rtl/ -> here as-is;
+# see NOTES.md for the full inventory and license findings)
+set_global_assignment -name VERILOG_FILE core/dragon_pll.v
+set_global_assignment -name SEARCH_PATH core/dragon
+set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/dragoncoco.sv
+set_global_assignment -name VERILOG_FILE core/dragon/mc6809i.v
+set_global_assignment -name VHDL_FILE core/dragon/mc6883.vhd
+set_global_assignment -name VHDL_FILE core/dragon/mc6847pace.vhd
+set_global_assignment -name VERILOG_FILE core/dragon/pia6520.v
+set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/dac.sv
+set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/acia.sv
+set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/fdc.sv
+set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/Cassette_Write.sv
+set_global_assignment -name VHDL_FILE core/dragon/dpram.vhd
+set_global_assignment -name VHDL_FILE core/dragon/dpram_1r1w.vhd
+set_global_assignment -name VHDL_FILE core/dragon/sprom.vhd
+set_global_assignment -name VHDL_FILE core/dragon/ttl_74LS138.vhd
+set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/keyboard.sv
+
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to bridge_1wire
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to bridge_spiclk
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to bridge_spimiso
