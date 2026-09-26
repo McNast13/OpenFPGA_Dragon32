@@ -286,3 +286,16 @@ Round 5: does the frozen address exactly equal $FFFE/$FFFF (the CPU never
 got past its own reset vector fetch) or something else in that range
 (fetched *something* and is stuck wherever that pointed)? Black vs white.
 Rebuilding to test.
+
+## 2026-09-26 — hardware test (round 5 diagnostic) — black
+
+CPU permanently stuck re-addressing exactly $FFFE/$FFFF - its own reset
+vector, the last 2 bytes of the ROM. Root cause theory: data_loader's
+WRITE_MEM_CLOCK_DELAY/EN_CYCLE_LENGTH (12, 5) were copied from
+PokemonMini verbatim, but that core's clk_memory runs at 40MHz - ours is
+only 14.85MHz, giving only ~20% margin against APF's ~1010ns-per-word
+bridge cadence (data_loader.sv's own documented figure). A transfer
+falling cumulatively behind under a tight margin would most plausibly
+corrupt whatever arrives last - exactly the reset vector. Dropped to (4,
+1), the documented minimum, for much more margin. Kept the diagnostic
+overlay in place (green would confirm this was it). Rebuilding to test.

@@ -335,6 +335,20 @@ frozen address *exactly* `$FFFE` or `$FFFF` (black — the CPU never even
 got past fetching its own reset vector) or somewhere else in that range
 (white — it fetched *something* and is stuck wherever that pointed).
 
+**Result: black.** The CPU is permanently stuck re-addressing exactly
+`$FFFE`/`$FFFF` — its own reset vector, the very last 2 bytes of the 16KB
+ROM. That specific location is the clue: `data_loader`'s
+`WRITE_MEM_CLOCK_DELAY`/`WRITE_MEM_EN_CYCLE_LENGTH` were copied from
+PokemonMini's `(12, 5)` verbatim, but PokemonMini's `clk_memory` runs at
+40MHz — ours (`clk_dragon`) is only 14.85MHz (the phase 1 timing-closure
+trade), so those same 12 cycles take ~808ns against APF's own documented
+~1010ns-per-word bridge cadence — only ~20% margin. A transfer that
+cumulatively falls behind under a tight margin would most plausibly
+corrupt whatever arrives *last* — exactly the reset vector. Dropped to
+`(4, 1)`, `data_loader.sv`'s own documented minimum, for much more margin
+(~269ns). Kept the diagnostic overlay in place for one more test: green
+would confirm this was it; anything else means the theory's wrong.
+
 ## Open items for phase 1
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores

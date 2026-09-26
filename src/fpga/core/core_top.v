@@ -539,6 +539,17 @@ synch_3 s_rst_dragon (reset_n, reset_n_dragon, clk_dragon);
 // constants) so every write lands in the Dragon 32 boot ROM slot
 // specifically, not the CoCo2/Dragon64/disk slots multiplexed on the same
 // bus inside the machine.
+//
+// WRITE_MEM_CLOCK_DELAY/WRITE_MEM_EN_CYCLE_LENGTH: originally copied
+// PokemonMini's (12, 5) verbatim, but that core's clk_memory runs at
+// 40MHz - ours (clk_dragon) is only 14.85MHz (see dragon_pll.v), so 12
+// cycles there took ~808ns against APF's ~1010ns-per-word bridge cadence
+// (data_loader.sv's own comment) - only ~20% margin. A hardware test
+// showed the CPU stuck forever re-fetching its own reset vector
+// ($FFFE/$FFFF, the very last 2 bytes of the 16KB ROM) - consistent with
+// the transfer falling cumulatively behind and corrupting whatever
+// arrived last. Dropped to (4, 1), data_loader.sv's own documented
+// minimum, for maximum margin (~269ns, comfortably under 1010ns).
 
     wire            rom_wr;
     wire    [13:0]  rom_addr;
@@ -547,8 +558,8 @@ synch_3 s_rst_dragon (reset_n, reset_n_dragon, clk_dragon);
 data_loader #(
     .ADDRESS_MASK_UPPER_4 ( 4'h0 ),
     .ADDRESS_SIZE         ( 14 ),
-    .WRITE_MEM_CLOCK_DELAY( 12 ),
-    .WRITE_MEM_EN_CYCLE_LENGTH( 5 )
+    .WRITE_MEM_CLOCK_DELAY( 4 ),
+    .WRITE_MEM_EN_CYCLE_LENGTH( 1 )
 ) rom_data_loader (
     .clk_74a               ( clk_74a ),
     .clk_memory             ( clk_dragon ),
