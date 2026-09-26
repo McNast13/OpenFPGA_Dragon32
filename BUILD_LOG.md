@@ -59,3 +59,24 @@ Error (12006): Node instance "coco_wd1793_0" instantiates undefined entity "wd17
 internally, which the phase 1 dependency scan missed — it only checked
 `dragoncoco.sv`'s own instantiations, not what `fdc.sv` itself pulls in.
 Fix: vendored `wd1793.sv`, added to `ap_core.qsf`. See NOTES.md.
+
+## 2026-09-26 — CI run #5 (36243997285) — compiled, but timing failed
+
+Compiled clean this time (`wd1793` fix worked): `bitstream.rbf_r` produced,
+zip packaged correctly.
+
+- **Fitter:** Cyclone V `5CEBA4F23C8` — 4,047/18,480 ALMs (22%), 3,101
+  registers, 802,884/3,153,920 block memory bits (25%), 100/308 RAM blocks
+  (32%), 2/4 PLLs. Comfortable headroom on everything.
+- **Timing: failed.** Worst case -10.121 ns setup slack (TNS -11186.465),
+  Slow 1100mV 85C corner, on `ic|dp1|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk`
+  — that's `dragon_pll`'s own internal counter hardware, not the machine
+  logic. For comparison, the *same kind* of node on the template's existing
+  `mf_pllbase` had +77.2 ns slack in phase 0's report. Diagnosis: the
+  delta-sigma fractional modulator (`fractional_vco_multiplier("true")`,
+  needed to hit 57.272727 MHz precisely) is tight at this output frequency.
+  Fix: switched to integer-N mode (`fractional_vco_multiplier("false")`) —
+  phase 1 doesn't need bit-exact frequency, so trading precision for a PLL
+  that actually closes timing is the right call. **Did not test this build
+  on hardware** — pushing a known timing failure to real hardware risks a
+  wasted test cycle for no useful information.

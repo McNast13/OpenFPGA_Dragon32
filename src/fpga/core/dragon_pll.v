@@ -18,6 +18,17 @@
 // BASIC) - that precision matters for phase 2's video/audio timing gate,
 // not this one.
 //
+// fractional_vco_multiplier is "false" (integer-N mode) rather than "true":
+// the first attempt at this file used fractional-N synthesis to hit the
+// target frequency more precisely, but CI's fitter reported a real timing
+// violation inside the PLL's own internal counter hardware (worst case
+// -10.1 ns setup slack on `PLL_OUTPUT_COUNTER|divclk`, vs. +77 ns on the
+// template's own mf_pllbase for the equivalent node) - the delta-sigma
+// fractional modulator appears to be tight at this output frequency.
+// Integer-N mode has simpler internal counter logic and no such modulator;
+// since exact frequency isn't needed here, this trades a little frequency
+// precision for a PLL that actually closes timing. See BUILD_LOG.md.
+//
 
 `default_nettype none
 
@@ -34,7 +45,7 @@ module dragon_pll (
     // Needed for the scaler's DDIO output clock - see core_top.v.
 
     altera_pll #(
-        .fractional_vco_multiplier("true"),
+        .fractional_vco_multiplier("false"),
         .reference_clock_frequency("74.25 MHz"),
         .operation_mode("normal"),
         .number_of_clocks(2),
