@@ -322,6 +322,19 @@ would point at a bad reset/interrupt vector fetch; either RAM color would
 suggest something jumped into uninitialized memory (a stack problem, or a
 vector pointing into RAM instead of ROM).
 
+**Result: pink** (confirmed via brightness, not hue, since the user is
+slightly colorblind — light/pale, not dark/saturated) — frozen somewhere
+in `$C000-FFFF`: cart/IO/vector space, including the reset vector at
+`$FFFE-FFFF`, the PIA1/PIA2 registers (`$FF00-FF3F`), and SAM's own
+registers (`$FFC0-FFFF`).
+
+Round 5 narrows this further with one more check, switching to plain
+primary/neutral colors going forward (red/blue/yellow/black/white/green
+only — no more magenta/cyan/purple/pink) per the user's preference: is the
+frozen address *exactly* `$FFFE` or `$FFFF` (black — the CPU never even
+got past fetching its own reset vector) or somewhere else in that range
+(white — it fetched *something* and is stuck wherever that pointed).
+
 ## Open items for phase 1
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores

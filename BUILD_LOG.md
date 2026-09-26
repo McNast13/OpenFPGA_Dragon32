@@ -273,3 +273,16 @@ valid clock, valid reset, `cpu_addr` still frozen. Round 4: replaced the
 single magenta case with four colors split by the frozen address's top 2
 bits across the memory map (RAM low/high, ROM, cart/IO/vectors) - see
 NOTES.md. Rebuilding to test.
+
+## 2026-09-26 — hardware test (round 4 diagnostic) — pink
+
+Frozen in `$C000-FFFF` (cart/IO/vector space - reset vector, PIA1/PIA2,
+SAM registers). Confirmed via brightness ("light/pale") rather than hue,
+since the user is slightly colorblind - noted for future rounds: primary
+colors only (red/blue/yellow/black/white/green), no more
+magenta/cyan/purple/pink together.
+
+Round 5: does the frozen address exactly equal $FFFE/$FFFF (the CPU never
+got past its own reset vector fetch) or something else in that range
+(fetched *something* and is stuck wherever that pointed)? Black vs white.
+Rebuilding to test.

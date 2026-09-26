@@ -731,10 +731,11 @@ end
         ~dbg_reset_n_s        ? 24'hFF8000 :  // orange
         ~clk_e_ever_toggled   ? 24'hFFFFFF :  // white
         ~cpu_alive            ?
-            (cpu_addr_snapshot_a[15:14] == 2'b00 ? 24'hFF00FF :  // magenta: RAM low $0000-3FFF
-             cpu_addr_snapshot_a[15:14] == 2'b01 ? 24'h00FFFF :  // cyan:    RAM high $4000-7FFF
-             cpu_addr_snapshot_a[15:14] == 2'b10 ? 24'h8000FF :  // purple:  ROM $8000-BFFF
-                                                    24'hFF80C0)  // pink:    cart/IO/vectors $C000-FFFF
+            (cpu_addr_snapshot_a[15:14] == 2'b00 ? 24'hFF0000 :  // red:    RAM low $0000-3FFF
+             cpu_addr_snapshot_a[15:14] == 2'b01 ? 24'h0000FF :  // blue:   RAM high $4000-7FFF
+             cpu_addr_snapshot_a[15:14] == 2'b10 ? 24'hFFFF00 :  // yellow: ROM $8000-BFFF
+             cpu_addr_snapshot_a[15:1] == 15'h7FFF ? 24'h000000 :  // black: exactly $FFFE/$FFFF (the reset vector itself)
+                                                    24'hFFFFFF)  // white: elsewhere in cart/IO/vectors $C000-FFFF
         :                       24'h00FF00;   // green
 
     reg rom_ever_written = 1'b0;
