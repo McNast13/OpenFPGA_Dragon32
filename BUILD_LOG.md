@@ -193,3 +193,27 @@ diagnostic build instead of guessing at a specific fix - see NOTES.md
 PLL lock / reset release / ROM load status, using the *other*, already-
 proven clock domain so it stays observable even if dragon_pll is the
 problem).
+
+## 2026-09-26 — correction: the gray screen was a copy bug, not the RTL
+
+Found while placing the diagnostic build on the SD card: the SD card's
+`Cores/McNast13.Dragon32/` already existed (from the phase 0 install), so
+every `cp -R .../Cores/McNast13.Dragon32 "/Volumes/ROMS/Cores/McNast13.Dragon32"`
+since then landed the new build *inside* the existing folder
+(`.../McNast13.Dragon32/McNast13.Dragon32/...`) instead of overwriting its
+contents - a classic `cp -R` gotcha (it copies the source directory *into*
+an existing destination directory, rather than merging into it). Confirmed
+by comparing MD5s: the top-level `bitstream.rbf_r` the Pocket actually
+loads was untouched since phase 0, while the real phase 1 builds were
+piling up one level too deep, invisible to the Pocket.
+
+So the entire "gray screen" investigation was chasing a phantom: **the
+Pocket was still running phase 0's stock test pattern the whole time**,
+which is exactly why it looked identical - it *was* identical, unchanged.
+The real phase 1 RTL was never actually tested on hardware yet.
+
+Fixed the SD card by moving the (correctly extracted) diagnostic build up
+to the real path and removing the nested copy; verified by checksum. The
+diagnostic build is now genuinely in place for the next test - worth
+running it now anyway, since it's still useful signal about the real RTL
+regardless of how we got here.
