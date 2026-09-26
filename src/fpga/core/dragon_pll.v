@@ -1,33 +1,44 @@
 //
 // dragon_pll.v
 //
-// Derives the Dragon 32 machine clock (~57.272727 MHz, 16x NTSC colorburst -
-// a hardware constant of the real machine, unrelated to the Pocket's own
-// clocking) from the APF system reference clock (clk_74a, 74.25 MHz).
+// Derives the Dragon 32 machine clock from the APF system reference clock
+// (clk_74a, 74.25 MHz). Real hardware wants ~57.272727 MHz (16x NTSC
+// colorburst) here - see below for why this drives 14.85 MHz instead, for
+// now.
 //
 // Written by hand rather than generated via Quartus's MegaWizard/IP Catalog
 // (not available in this environment - no local Quartus install). Follows
 // the exact same pattern as the template's own mf_pllbase_0002.v: a direct
 // instantiation of Quartus's altera_pll primitive with plain frequency
-// strings as generics ("74.25 MHz", "57.272727 MHz"). Quartus's own
-// Analysis & Synthesis resolves the actual PLL M/N/C counter values from
-// those strings during a normal compile - this is the same fractional-N
-// synthesis the wizard would have produced, just without needing the wizard.
+// strings as generics. Quartus's own Analysis & Synthesis resolves the
+// actual PLL M/N/C counter values from those strings during a normal
+// compile - no IP wizard needed.
 //
-// History (see BUILD_LOG.md for the full trail): this PLL's two output
-// clocks were missing from core_constraints.sdc's asynchronous clock-group
-// declaration, which caused some (not all) of a run of apparent timing
-// violations on this PLL's internal counter hardware - fixed there. But
-// after fixing that and putting the bit-exact 57.272727 MHz fractional
-// target back, the worst-case ("Slow") timing corner still failed on the
-// same node, while the other corners passed - so the fractional delta-sigma
-// modulator genuinely is tight at this frequency on top of the SDC issue.
-// Landed on integer-N mode at 57.75 MHz (74.25 MHz x 7/9 exactly, a clean
-// small-integer ratio, ~0.83% off the real hardware's 57.272727 MHz) as the
-// combination that actually closes: correct SDC + a frequency integer-N
-// mode can represent exactly, with no modulator in the path at all. The
-// frequency difference is irrelevant to phase 1's gate (booting to BASIC);
-// revisit in phase 2 if video/audio timing precision needs it back.
+// History (see BUILD_LOG.md for the full trail of CI attempts): this PLL's
+// two output clocks were missing from core_constraints.sdc's asynchronous
+// clock-group declaration, which caused some (not all) of a run of
+// apparent timing violations - fixed there. What was left, after trying
+// both fractional and integer-N synthesis at frequencies from 57.27 to
+// 57.75 MHz, was real: -10ns-ish worst-case setup slack against a ~17.3ns
+// period implies an actual critical path around 27ns somewhere in the
+// machine (most likely mc6809i.v's combinational instruction decoder) -
+// i.e. a genuine ~36MHz ceiling on this part, not a PLL configuration
+// problem. That tracks: the Pocket's Cyclone V (5CEBA4F23C8, speed grade
+// C8) is a smaller, slower-graded part than the Cyclone V on MiSTer's
+// DE10-Nano (speed grade C6) this RTL was written against, so timing that
+// closes there isn't guaranteed to close here.
+//
+// 14.85 MHz (74.25 MHz x 1/5, an easy ratio) gives generous headroom below
+// that ~36MHz ceiling - about a quarter of the machine's intended speed,
+// which only affects how fast it runs and its video refresh rate, not
+// functional correctness (this is synchronous digital logic; it works the
+// same at any clock rate it can meet timing at). That's an acceptable
+// trade for phase 1's actual gate (booting to BASIC - digital correctness,
+// not real-time speed). Revisit this in phase 2, which is explicitly about
+// getting video/audio timing right (matching XRoar) - by then, a proper
+// report_timing pass (this file's earlier attempts only had access to
+// summary-level slack numbers, not the actual critical path) should show
+// how much margin is really available and how close to 57.27MHz is safe.
 //
 
 `default_nettype none
@@ -41,7 +52,7 @@ module dragon_pll (
 );
 
     // outclk_1: same frequency as outclk_0, phase-shifted 90 degrees
-    // (a quarter period at 57.75 MHz = 1e12/57750000/4 ps = ~4329 ps).
+    // (a quarter period at 14.85 MHz = 1e12/14850000/4 ps = ~16835 ps).
     // Needed for the scaler's DDIO output clock - see core_top.v.
 
     altera_pll #(
@@ -49,10 +60,10 @@ module dragon_pll (
         .reference_clock_frequency("74.25 MHz"),
         .operation_mode("normal"),
         .number_of_clocks(2),
-        .output_clock_frequency0("57.75 MHz"),
+        .output_clock_frequency0("14.85 MHz"),
         .phase_shift0("0 ps"),
         .duty_cycle0(50),
-        .output_clock_frequency1("57.75 MHz"), .phase_shift1("4329 ps"), .duty_cycle1(50),
+        .output_clock_frequency1("14.85 MHz"), .phase_shift1("16835 ps"), .duty_cycle1(50),
         .output_clock_frequency2("0 MHz"), .phase_shift2("0 ps"), .duty_cycle2(50),
         .output_clock_frequency3("0 MHz"), .phase_shift3("0 ps"), .duty_cycle3(50),
         .output_clock_frequency4("0 MHz"), .phase_shift4("0 ps"), .duty_cycle4(50),

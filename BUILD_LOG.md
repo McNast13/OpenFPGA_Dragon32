@@ -136,3 +136,32 @@ worst-case timing corner, independent of the SDC issue. Fix: switched back
 to integer-N mode at 57.75 MHz (the clean 7/9 ratio from run #6/#7) - this
 time keeping the corrected SDC as well, combining both fixes rather than
 treating them as alternatives.
+
+## 2026-09-26 — CI run #9 (36247444616) — compiled, timing still failed
+
+Same fitter numbers as before (4,041 ALMs, 22%). Timing: still 2 negative
+slack instances, same node, similar magnitude (-9.971 ns / -9.403 ns) as
+run #8 - despite now being in integer-N mode (no fractional modulator) with
+the corrected SDC. That ruled out both of the previous theories (missing
+SDC group, fractional modulator tightness) as the *sole* cause.
+
+Re-read what this timing check actually is: `ic|dp1|altera_pll_i|general[0]
+.gpll~PLL_OUTPUT_COUNTER|divclk` is simply Quartus's internal name for
+dragon_pll's outclk_0 net itself - not a PLL-internal-only diagnostic as
+assumed in runs #5-#8, but the actual clock powering every register in the
+Dragon 32 machine. This is real machine-logic timing: -10 ns slack against
+a ~17.3 ns period implies an actual critical path around 27 ns somewhere in
+the RTL (most likely `mc6809i.v`'s combinational instruction decoder) - a
+genuine ~36 MHz ceiling on this part. Plausible root cause: the Pocket's
+Cyclone V (`5CEBA4F23C8`, speed grade C8) is a smaller/slower-graded part
+than the Cyclone V on MiSTer's DE10-Nano (speed grade C6) this RTL was
+written against - timing that closes there isn't guaranteed to close here.
+
+Fix: dropped the target frequency to 14.85 MHz (74.25 MHz x 1/5), about a
+quarter of real-time speed but with generous headroom below the ~36 MHz
+ceiling. Functional correctness doesn't depend on clock rate for
+synchronous digital logic - only perceived speed and video refresh rate do
+- so this is an acceptable trade to finally get a clean pass for phase 1's
+actual gate (booting to BASIC). Revisit in phase 2, which needs correct
+video/audio timing anyway and is the right place to add a real
+`report_timing` detail pass and find out how close to 57.27 MHz is safe.

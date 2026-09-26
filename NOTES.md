@@ -124,8 +124,22 @@ inventory table above. Only `rtl/`, `CoCo2.sv` (for reference), and
   built. Feeds `clk_74a` (74.25 MHz) in, `dragoncoco.clk` out.
   - Getting this frequency bit-exact isn't necessary for phase 1's gate
     (BASIC banner, not broadcast-accurate video) — that precision matters
-    for phase 2's video/audio-timing gate, not this one. If phase 1's
-    picture looks unstable through the scaler, revisit here first.
+    for phase 2's video/audio-timing gate, not this one.
+  - **Update after CI feedback:** it's currently driven at 14.85 MHz, not
+    57.27 MHz. CI's fitter found real timing closure problems in the
+    machine RTL itself (most likely `mc6809i.v`'s combinational decoder) —
+    a worst-case ~-10 ns setup slack against a ~17.3 ns period implies an
+    actual critical path around 27 ns, i.e. a genuine ~36 MHz ceiling on
+    the Pocket's Cyclone V part (`5CEBA4F23C8`, speed grade C8 — smaller
+    and slower-graded than the C6 part on MiSTer's DE10-Nano this RTL was
+    written against). 14.85 MHz gives generous headroom below that ceiling
+    at the cost of running the machine at roughly a quarter of real-time
+    speed for now. Digital correctness doesn't depend on clock rate, only
+    perceived speed and video refresh rate do, so this is fine for phase
+    1's gate. Revisit in phase 2 (which needs correct video/audio timing
+    anyway) with a real `report_timing -detail full_path` pass to find the
+    actual critical path and how close to 57.27 MHz is genuinely safe —
+    see BUILD_LOG.md's CI run #5–#9 entries for the full debugging trail.
 - **`CLK50MHZ`:** only reaches live logic through `fdc.sv`'s disk timing,
   which is dead code while `disk_cart_enabled = 0`. Tied directly to
   `clk_74a` rather than generating a third clock domain for no functional
