@@ -378,6 +378,26 @@ both rather than needing a separate round if `clk_E` turns out fine and
 stalled) — distinguishable from white/black by brightness alone, not hue,
 per the colorblind-friendly preference.
 
+**Result: white** - `clk_E` genuinely stalled (not just "toggled once" -
+this is the real finding the round-4 check missed).
+
+Traced `clk_E`'s generation in `mc6883.vhd` (SAM): it's driven by a plain
+free-running divide-by-4 counter (`Tm` process, `t_clks`) - no PLL, no
+frequency-dependent NCO, nothing that should care what absolute rate `clk`
+runs at. That rules out a "broke because we slowed the clock" theory for
+*this specific* divider. But that whole state machine (`PROC_MAIN`) only
+advances `if spd_ena = '1'` - SAM's own internal clock-enable pulse
+(exposed in `dragoncoco.sv` as the `clk_enable` wire, already declared,
+just never tapped before). If `spd_ena` itself is stalled, that would be
+the deeper root cause behind `clk_E`/`clk_Q` both freezing, not a separate
+problem in each.
+
+Added a `dbg_spd_ena` tap with the same watchdog, positioned *before* the
+`clk_E`/`clk_Q` checks in the priority chain (it's the more fundamental
+candidate): black now means `spd_ena` stalled; white is redefined to mean
+"`spd_ena` is fine, but `clk_E` stalled anyway" (a genuine puzzle if seen,
+since `clk_E` is directly gated by `spd_ena`).
+
 ## Open items for phase 1
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores

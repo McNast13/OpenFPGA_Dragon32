@@ -319,3 +319,16 @@ Also added the same watchdog for `clk_Q` (never tapped before - only
 `clk_E` was checked, but the CPU needs both phases) in the same build,
 combining what would otherwise be two separate hardware round-trips.
 New color: gray (clk_E fine, clk_Q stalled). Rebuilding to test.
+
+## 2026-09-26 — hardware test (clk_E/clk_Q watchdog) — white
+
+clk_E genuinely stalled (not just "toggled once" - the real finding the
+round-4 check missed). Traced clk_E's generation in mc6883.vhd: a plain
+free-running divide-by-4 counter, no PLL/NCO, clock-rate-independent -
+rules out "broke because we slowed the clock" for that specific divider.
+But that whole state machine only advances if SAM's own spd_ena pulse is
+high - added a dbg_spd_ena tap (exposed via dragoncoco.sv's existing
+clk_enable wire) with the same watchdog, positioned before clk_E/clk_Q in
+the priority chain since it's the more fundamental candidate. Black now
+means spd_ena stalled; white is redefined to mean spd_ena is fine but
+clk_E stalled anyway. Rebuilding to test.

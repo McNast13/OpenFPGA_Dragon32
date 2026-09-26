@@ -104,7 +104,8 @@ module dragoncoco(
   output       [15:0]  dbg_cpu_addr,
   output              dbg_reset_n,
   output              dbg_clk_e,
-  output              dbg_clk_q
+  output              dbg_clk_q,
+  output              dbg_spd_ena
 );
 
 
@@ -906,5 +907,6 @@ assign dbg_cpu_addr = cpu_addr;
 assign dbg_reset_n = reset_n;
 assign dbg_clk_e = clk_E;
 assign dbg_clk_q = clk_Q;
+assign dbg_spd_ena = clk_enable;
 
 endmodule

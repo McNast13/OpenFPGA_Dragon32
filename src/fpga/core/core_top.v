@@ -585,6 +585,7 @@ data_loader #(
     wire        dbg_reset_n;
     wire        dbg_clk_e;
     wire        dbg_clk_q;
+    wire        dbg_spd_ena;
 
 dragoncoco dragon (
     .clk            ( clk_dragon ),
@@ -668,7 +669,8 @@ dragoncoco dragon (
     .dbg_cpu_addr   ( dbg_cpu_addr ),
     .dbg_reset_n    ( dbg_reset_n ),
     .dbg_clk_e      ( dbg_clk_e ),
-    .dbg_clk_q      ( dbg_clk_q )
+    .dbg_clk_q      ( dbg_clk_q ),
+    .dbg_spd_ena    ( dbg_spd_ena )
 );
 
 // TEMPORARY DIAGNOSTIC BUILD, round 2 - see NOTES.md "Debugging the stuck
@@ -701,10 +703,12 @@ dragoncoco dragon (
     wire [15:0] dbg_cpu_addr_s;
     wire        dbg_clk_e_s;
     wire        dbg_clk_q_s;
+    wire        dbg_spd_ena_s;
 synch_3 s_diag_ireset (dbg_reset_n, dbg_reset_n_s, clk_core_12288);
 synch_3 #(.WIDTH(16)) s_diag_pc (dbg_cpu_addr, dbg_cpu_addr_s, clk_core_12288);
 synch_3 s_diag_clke (dbg_clk_e, dbg_clk_e_s, clk_core_12288);
 synch_3 s_diag_clkq (dbg_clk_q, dbg_clk_q_s, clk_core_12288);
+synch_3 s_diag_spdena (dbg_spd_ena, dbg_spd_ena_s, clk_core_12288);
 
     reg  [23:0] sample_counter = 0;
     reg  [15:0] cpu_addr_snapshot_a = 0;
@@ -712,20 +716,27 @@ synch_3 s_diag_clkq (dbg_clk_q, dbg_clk_q_s, clk_core_12288);
     reg         cpu_alive = 0;
     reg         dbg_clk_e_prev = 0;
     reg         dbg_clk_q_prev = 0;
+    reg         dbg_spd_ena_prev = 0;
     reg  [19:0] clke_watchdog = 0;
     reg  [19:0] clkq_watchdog = 0;
+    reg  [19:0] spdena_watchdog = 0;
     reg         clke_active_at_sampleB = 0;
     reg         clkq_active_at_sampleB = 0;
+    reg         spdena_active_at_sampleB = 0;
     localparam SAMPLE_A = 24'd3_072_000;  // ~0.25s @ 12.288MHz
     localparam SAMPLE_B = 24'd9_216_000;  // ~0.75s @ 12.288MHz
-    // If clk_E/clk_Q haven't toggled in ~10ms, they're stalled - real E/Q
-    // toggles far more often than that even heavily slowed down. Round 4's
-    // check only asked "did clk_E ever toggle even once", which a single
-    // edge right at reset release would already satisfy without it
-    // continuing to run - this checks it's still actively toggling right
-    // before sample B. clk_Q is checked the same way, separately - the CPU
-    // needs both phases (see mc6809i.v's own clocking comments), and only
-    // clk_E was ever tapped before this round.
+    // If clk_E/clk_Q/spd_ena haven't toggled in ~10ms, they're stalled -
+    // real E/Q toggles far more often than that even heavily slowed down.
+    // Round 4's check only asked "did clk_E ever toggle even once", which
+    // a single edge right at reset release would already satisfy without
+    // it continuing to run - this checks it's still actively toggling
+    // right before sample B. clk_Q is checked the same way, separately -
+    // the CPU needs both phases (see mc6809i.v's own clocking comments).
+    // spd_ena (SAM's own internal clock-enable pulse, exposed here as
+    // dragoncoco.sv's clk_enable wire) gates SAM's entire E/Q-generating
+    // state machine (mc6883.vhd's PROC_MAIN only advances "if spd_ena='1'")
+    // - if IT'S stalled, that's the deeper root cause behind clk_E/clk_Q
+    // both freezing, not a separate, unrelated problem.
     localparam CLKE_STALL_THRESHOLD = 20'd122_880;  // ~10ms @ 12.288MHz
 always @(posedge clk_core_12288) begin
     if (sample_counter != {24{1'b1}}) sample_counter <= sample_counter + 1'b1;
@@ -757,6 +768,16 @@ always @(posedge clk_core_12288) begin
     if (sample_counter == SAMPLE_B) begin
         clkq_active_at_sampleB <= (clkq_watchdog < CLKE_STALL_THRESHOLD);
     end
+
+    dbg_spd_ena_prev <= dbg_spd_ena_s;
+    if (dbg_spd_ena_s != dbg_spd_ena_prev) begin
+        spdena_watchdog <= 0;
+    end else if (spdena_watchdog != {20{1'b1}}) begin
+        spdena_watchdog <= spdena_watchdog + 1'b1;
+    end
+    if (sample_counter == SAMPLE_B) begin
+        spdena_active_at_sampleB <= (spdena_watchdog < CLKE_STALL_THRESHOLD);
+    end
 end
 
 // Round 3 came back magenta again: clk_E is toggling fine, cpu_addr still
@@ -774,7 +795,8 @@ end
         ~reset_n_dragon_s     ? 24'h0000FF :  // blue
         ~rom_ever_written_s   ? 24'hFFFF00 :  // yellow
         ~dbg_reset_n_s        ? 24'hFF8000 :  // orange
-        ~clke_active_at_sampleB ? 24'hFFFFFF :  // white:  clk_E stalled
+        ~spdena_active_at_sampleB ? 24'h000000 :  // black:  SAM's spd_ena pulse stalled (roots clk_E/clk_Q both freezing)
+        ~clke_active_at_sampleB ? 24'hFFFFFF :  // white:  spd_ena fine, but clk_E stalled anyway
         ~clkq_active_at_sampleB ? 24'h808080 :  // gray:   clk_E fine, clk_Q stalled
         ~cpu_alive            ?
             (cpu_addr_snapshot_a[15:14] == 2'b00 ? 24'hFF0000 :  // red:    RAM low $0000-3FFF
