@@ -238,3 +238,18 @@ loaded — all three gates confirmed good on real hardware. Reverted
 `core_top.v` to real video passthrough (removed the diagnostic overlay)
 to test whether the actual BASIC banner appears now that the boot chain is
 confirmed working end to end.
+
+## 2026-09-26 — hardware test (real video) — stuck showing "@"
+
+16 rows of giant "@" symbols (a Dragon/CoCo VDG's decode of all-zero video
+RAM - real character decode confirmed working, but BASIC hasn't written
+its banner). Waited 15-30s at the user's own initiative - no change, so
+genuinely stuck rather than just slow at our reduced clock. Column count
+(5 instead of 32) is a separate display-geometry issue, deferred - not
+blocking this diagnosis since the content itself (not just its geometry)
+is wrong.
+
+Added two debug taps to dragoncoco.sv (`dbg_cpu_addr`, `dbg_reset_n` - see
+NOTES.md "Debugging the stuck @ screen") and extended the diagnostic
+overlay to check whether the CPU is actually executing at all. Rebuilding
+to test.

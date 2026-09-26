@@ -252,6 +252,30 @@ locked, reset released, ROM loaded — all three gates confirmed good.
 Reverted `core_top.v` back to real video passthrough (diagnostic overlay
 removed) to see whether the actual BASIC banner now appears.
 
+## Debugging the stuck @ screen (2026-09-26)
+
+Real video passthrough showed 16 rows of "@" — the VDG's own decode of
+all-zero video RAM (a well-known Dragon/CoCo "uninitialized text screen"
+pattern: character code 0 decodes as "@"), not the actual BASIC banner.
+Waited well past what our ~4x-slowed clock should plausibly need
+(15–30s) — no change. Genuinely stuck, not just slow.
+
+Added two more debug taps directly on `dragoncoco.sv` (temporary — see
+its own "TEMPORARY DEBUG TAPS" comment, and its port list, for exactly
+what was added and where to remove it later): `dbg_cpu_addr` (the CPU's
+own internal `cpu_addr` bus) and `dbg_reset_n` (`dragoncoco.sv`'s *own*
+internal reset counter's output — distinct from our `reset_n_dragon`,
+which only gates the top-level `trig_reset_n` input; `dragoncoco.sv`
+stretches that into its own ~256-cycle power-on reset internally).
+
+Extended the diagnostic overlay (round 2) with two more gates: does
+`dragoncoco`'s internal reset ever release (orange if not), and does
+`cpu_addr` ever change at all in the first ~0.75s (magenta if frozen,
+green if it moved) — using two timed snapshots on the same safe
+`clk_core_12288` domain as before. Whatever this comes back as narrows
+"is the CPU actually executing" from "is it executing wrong/writing to
+the wrong place."
+
 ## Open items for phase 1
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores

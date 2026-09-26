@@ -570,6 +570,8 @@ data_loader #(
 
     wire [7:0]  dragon_red, dragon_green, dragon_blue;
     wire        dragon_hblank, dragon_vblank, dragon_hsync, dragon_vsync;
+    wire [15:0] dbg_cpu_addr;
+    wire        dbg_reset_n;
 
 dragoncoco dragon (
     .clk            ( clk_dragon ),
@@ -648,28 +650,144 @@ dragoncoco dragon (
     .sd_buff_din    (  ),
     .sd_buff_wr     ( 1'b0 ),
 
-    .CASS_REWIND_RECORD( 1'b0 )
+    .CASS_REWIND_RECORD( 1'b0 ),
+
+    .dbg_cpu_addr   ( dbg_cpu_addr ),
+    .dbg_reset_n    ( dbg_reset_n )
 );
 
-// Straight pass-through to the scaler: dragoncoco.sv already produces
-// digital RGB plus blank/sync signals every clk_dragon cycle, so there's
-// no need for the template's own test-pattern timing generator or its
-// 12.288 MHz video clock - the machine's own native clock drives the
-// scaler's DDIO output directly (see apf_top.v for why outclk_1's 90-degree
-// phase shift specifically matters there).
+// TEMPORARY DIAGNOSTIC BUILD, round 2 - see NOTES.md "Debugging the stuck
+// @ screen". Real video passthrough (previous version, git history has
+// it) showed 16 rows of "@" - the VDG's decode of all-zero video RAM, i.e.
+// the CPU never got as far as writing BASIC's banner - and stayed that way
+// even after waiting well past what our ~4x-slowed clock should need. So
+// this isn't just slow, something's actually stuck.
 //
-// This replaces the temporary diagnostic build (see NOTES.md "Debugging
-// the gray screen" and BUILD_LOG.md for the trail) - that build confirmed
-// dragon_pll locks, reset releases, and the boot ROM loads (green), so
-// whatever happens now is genuinely dragoncoco's own video output.
+// This checks two more gates, using dragoncoco.sv's own internal
+// reset_n (distinct from our reset_n_dragon - dragoncoco.sv has its own
+// startup reset counter) and whether cpu_addr ever changes at all - taking
+// two snapshots ~0.25s and ~0.75s after boot and comparing them, using
+// clk_core_12288 (safe, independent of clk_dragon) as usual:
+//
+//   RED     - dragon_pll never locked
+//   BLUE    - reset_n_dragon never released
+//   YELLOW  - boot ROM never written
+//   ORANGE  - dragoncoco's *internal* reset_n never released
+//   MAGENTA - internal reset released, but cpu_addr never changed at all
+//             in half a second - genuinely halted/frozen
+//   GREEN   - cpu_addr IS changing - the CPU is executing, so the bug is
+//             in memory mapping/content, not execution
 
-assign video_rgb_clock = clk_dragon;
-assign video_rgb_clock_90 = clk_dragon_90deg;
-assign video_rgb = {dragon_red, dragon_green, dragon_blue};
-assign video_de = ~(dragon_hblank | dragon_vblank);
-assign video_skip = 1'b0;
-assign video_vs = dragon_vsync;
-assign video_hs = dragon_hsync;
+    wire        dbg_reset_n_s;
+    wire [15:0] dbg_cpu_addr_s;
+synch_3 s_diag_ireset (dbg_reset_n, dbg_reset_n_s, clk_core_12288);
+synch_3 #(.WIDTH(16)) s_diag_pc (dbg_cpu_addr, dbg_cpu_addr_s, clk_core_12288);
+
+    reg  [23:0] sample_counter = 0;
+    reg  [15:0] cpu_addr_snapshot_a = 0;
+    reg         snapshot_a_taken = 0;
+    reg         cpu_alive = 0;
+    localparam SAMPLE_A = 24'd3_072_000;  // ~0.25s @ 12.288MHz
+    localparam SAMPLE_B = 24'd9_216_000;  // ~0.75s @ 12.288MHz
+always @(posedge clk_core_12288) begin
+    if (sample_counter != {24{1'b1}}) sample_counter <= sample_counter + 1'b1;
+    if (sample_counter == SAMPLE_A) begin
+        cpu_addr_snapshot_a <= dbg_cpu_addr_s;
+        snapshot_a_taken <= 1'b1;
+    end
+    if (sample_counter == SAMPLE_B && snapshot_a_taken
+        && dbg_cpu_addr_s != cpu_addr_snapshot_a) begin
+        cpu_alive <= 1'b1;
+    end
+end
+
+    wire [23:0] diag_color =
+        ~pll_dragon_locked_s ? 24'hFF0000 :  // red
+        ~reset_n_dragon_s    ? 24'h0000FF :  // blue
+        ~rom_ever_written_s  ? 24'hFFFF00 :  // yellow
+        ~dbg_reset_n_s       ? 24'hFF8000 :  // orange
+        ~cpu_alive           ? 24'hFF00FF :  // magenta
+                               24'h00FF00;   // green
+
+    reg rom_ever_written = 1'b0;
+always @(posedge clk_dragon) begin
+    if (rom_wr) rom_ever_written <= 1'b1;
+end
+
+    wire pll_dragon_locked_s;
+    wire reset_n_dragon_s;
+    wire rom_ever_written_s;
+synch_3 s_diag_pll (pll_dragon_locked, pll_dragon_locked_s, clk_core_12288);
+synch_3 s_diag_rst (reset_n_dragon,    reset_n_dragon_s,    clk_core_12288);
+synch_3 s_diag_rom (rom_ever_written,  rom_ever_written_s,  clk_core_12288);
+
+assign video_rgb_clock = clk_core_12288;
+assign video_rgb_clock_90 = clk_core_12288_90deg;
+assign video_rgb = vidout_rgb;
+assign video_de = vidout_de;
+assign video_skip = vidout_skip;
+assign video_vs = vidout_vs;
+assign video_hs = vidout_hs;
+
+    localparam  VID_V_BPORCH = 'd10;
+    localparam  VID_V_ACTIVE = 'd240;
+    localparam  VID_V_TOTAL = 'd512;
+    localparam  VID_H_BPORCH = 'd10;
+    localparam  VID_H_ACTIVE = 'd320;
+    localparam  VID_H_TOTAL = 'd400;
+
+    reg [15:0]  frame_count;
+
+    reg [9:0]   x_count;
+    reg [9:0]   y_count;
+
+    reg [23:0]  vidout_rgb;
+    reg         vidout_de;
+    reg         vidout_skip;
+    reg         vidout_vs;
+    reg         vidout_hs;
+
+always @(posedge clk_core_12288 or negedge reset_n) begin
+
+    if(~reset_n) begin
+
+        x_count <= 0;
+        y_count <= 0;
+
+    end else begin
+        vidout_de <= 0;
+        vidout_skip <= 0;
+        vidout_vs <= 0;
+        vidout_hs <= 0;
+
+        x_count <= x_count + 1'b1;
+        if(x_count == VID_H_TOTAL-1) begin
+            x_count <= 0;
+
+            y_count <= y_count + 1'b1;
+            if(y_count == VID_V_TOTAL-1) begin
+                y_count <= 0;
+            end
+        end
+
+        if(x_count == 0 && y_count == 0) begin
+            vidout_vs <= 1;
+            frame_count <= frame_count + 1'b1;
+        end
+
+        if(x_count == 3) begin
+            vidout_hs <= 1;
+        end
+
+        vidout_rgb <= 24'h0;
+        if(x_count >= VID_H_BPORCH && x_count < VID_H_ACTIVE+VID_H_BPORCH) begin
+            if(y_count >= VID_V_BPORCH && y_count < VID_V_ACTIVE+VID_V_BPORCH) begin
+                vidout_de <= 1;
+                vidout_rgb <= diag_color;
+            end
+        end
+    end
+end
 
 
 
