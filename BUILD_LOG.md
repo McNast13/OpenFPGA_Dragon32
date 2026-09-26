@@ -46,3 +46,16 @@ on real hardware: gray test pattern confirmed on screen.
 
 **Phase 0 complete.** Toolchain, CI, packaging and SD card install all work
 end to end. Moving to phase 1: get the actual Dragon 32 machine running.
+
+## 2026-09-26 — CI run #4 (36243434530) — failed (Analysis & Synthesis)
+
+First attempt at wiring the real machine into `core_top.v`. Failed with:
+
+```
+Error (12006): Node instance "coco_wd1793_0" instantiates undefined entity "wd1793".
+```
+
+(×4, one per `fdc.sv` instance). Cause: `fdc.sv` instantiates `wd1793`
+internally, which the phase 1 dependency scan missed — it only checked
+`dragoncoco.sv`'s own instantiations, not what `fdc.sv` itself pulls in.
+Fix: vendored `wd1793.sv`, added to `ap_core.qsf`. See NOTES.md.
