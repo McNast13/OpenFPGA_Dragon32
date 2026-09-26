@@ -586,6 +586,7 @@ data_loader #(
     wire        dbg_clk_e;
     wire        dbg_clk_q;
     wire        dbg_spd_ena;
+    wire [1:0]  dbg_t_clks;
 
 dragoncoco dragon (
     .clk            ( clk_dragon ),
@@ -670,7 +671,8 @@ dragoncoco dragon (
     .dbg_reset_n    ( dbg_reset_n ),
     .dbg_clk_e      ( dbg_clk_e ),
     .dbg_clk_q      ( dbg_clk_q ),
-    .dbg_spd_ena    ( dbg_spd_ena )
+    .dbg_spd_ena    ( dbg_spd_ena ),
+    .dbg_t_clks     ( dbg_t_clks )
 );
 
 // TEMPORARY DIAGNOSTIC BUILD, round 2 - see NOTES.md "Debugging the stuck
@@ -704,11 +706,13 @@ dragoncoco dragon (
     wire        dbg_clk_e_s;
     wire        dbg_clk_q_s;
     wire        dbg_spd_ena_s;
+    wire [1:0]  dbg_t_clks_s;
 synch_3 s_diag_ireset (dbg_reset_n, dbg_reset_n_s, clk_core_12288);
 synch_3 #(.WIDTH(16)) s_diag_pc (dbg_cpu_addr, dbg_cpu_addr_s, clk_core_12288);
 synch_3 s_diag_clke (dbg_clk_e, dbg_clk_e_s, clk_core_12288);
 synch_3 s_diag_clkq (dbg_clk_q, dbg_clk_q_s, clk_core_12288);
 synch_3 s_diag_spdena (dbg_spd_ena, dbg_spd_ena_s, clk_core_12288);
+synch_3 #(.WIDTH(2)) s_diag_tclks (dbg_t_clks, dbg_t_clks_s, clk_core_12288);
 
     reg  [23:0] sample_counter = 0;
     reg  [15:0] cpu_addr_snapshot_a = 0;
@@ -717,12 +721,15 @@ synch_3 s_diag_spdena (dbg_spd_ena, dbg_spd_ena_s, clk_core_12288);
     reg         dbg_clk_e_prev = 0;
     reg         dbg_clk_q_prev = 0;
     reg         dbg_spd_ena_prev = 0;
+    reg  [1:0]  dbg_t_clks_prev = 0;
     reg  [19:0] clke_watchdog = 0;
     reg  [19:0] clkq_watchdog = 0;
     reg  [19:0] spdena_watchdog = 0;
+    reg  [19:0] tclks_watchdog = 0;
     reg         clke_active_at_sampleB = 0;
     reg         clkq_active_at_sampleB = 0;
     reg         spdena_active_at_sampleB = 0;
+    reg         tclks_active_at_sampleB = 0;
     localparam SAMPLE_A = 24'd3_072_000;  // ~0.25s @ 12.288MHz
     localparam SAMPLE_B = 24'd9_216_000;  // ~0.75s @ 12.288MHz
     // If clk_E/clk_Q/spd_ena haven't toggled in ~10ms, they're stalled -
@@ -778,6 +785,16 @@ always @(posedge clk_core_12288) begin
     if (sample_counter == SAMPLE_B) begin
         spdena_active_at_sampleB <= (spdena_watchdog < CLKE_STALL_THRESHOLD);
     end
+
+    dbg_t_clks_prev <= dbg_t_clks_s;
+    if (dbg_t_clks_s != dbg_t_clks_prev) begin
+        tclks_watchdog <= 0;
+    end else if (tclks_watchdog != {20{1'b1}}) begin
+        tclks_watchdog <= tclks_watchdog + 1'b1;
+    end
+    if (sample_counter == SAMPLE_B) begin
+        tclks_active_at_sampleB <= (tclks_watchdog < CLKE_STALL_THRESHOLD);
+    end
 end
 
 // spd_ena stalled, and SAM's Tm process generating it is a trivial
@@ -825,9 +842,11 @@ end
         pll_ever_glitched     ? 24'hFF0000 :  // red (reused):  pll_dragon_locked went low again after coming up
         rst_dragon_ever_glitched ? 24'h0000FF :  // blue (reused): reset_n_dragon went low again after coming up
         ireset_ever_glitched  ? 24'hFF8000 :  // orange (reused): dragoncoco's internal reset went low again
-        ~spdena_active_at_sampleB ? 24'h000000 :  // black:  SAM's spd_ena pulse stalled (roots clk_E/clk_Q both freezing)
-        ~clke_active_at_sampleB ? 24'hFFFFFF :  // white:  spd_ena fine, but clk_E stalled anyway
-        ~clkq_active_at_sampleB ? 24'h808080 :  // gray:   clk_E fine, clk_Q stalled
+        // Neutral brightness progression, darkest = most fundamental:
+        ~tclks_active_at_sampleB ? 24'h000000 :  // black:      SAM's own t_clks divider (drives spd_ena) stalled - the most basic possible cause
+        ~spdena_active_at_sampleB ? 24'h404040 :  // dark gray: t_clks fine, but spd_ena stalled anyway
+        ~clke_active_at_sampleB ? 24'h808080 :  // gray:       spd_ena fine, but clk_E stalled anyway
+        ~clkq_active_at_sampleB ? 24'hC0C0C0 :  // light gray: clk_E fine, clk_Q stalled
         ~cpu_alive            ?
             (cpu_addr_snapshot_a[15:14] == 2'b00 ? 24'hFF0000 :  // red:    RAM low $0000-3FFF
              cpu_addr_snapshot_a[15:14] == 2'b01 ? 24'h0000FF :  // blue:   RAM high $4000-7FFF

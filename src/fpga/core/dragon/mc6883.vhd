@@ -41,7 +41,15 @@ entity mc6883 is
 		WR_CK_ENA		: out std_logic;
 		
 		-- debug
-		dbg     		: out std_logic_vector(15 downto 0)
+		dbg     		: out std_logic_vector(15 downto 0);
+
+		-- TEMPORARY DEBUG TAP - not part of upstream mc6883.vhd, added for
+		-- hardware bring-up diagnostics only (Pocket port, phase 1). Exposes
+		-- t_clks (the Tm process's own divide-by-4 counter that generates
+		-- spd_ena) directly, to settle whether it's incrementing at all.
+		-- Remove once the machine is confirmed booting correctly - see the
+		-- repo's NOTES.md, "Debugging the stuck @ screen".
+		dbg_t_clks	: out std_logic_vector(1 downto 0)
 	);
 end mc6883;
 
@@ -475,5 +483,6 @@ Tm:	process (clk, reset)
 
   -- for hexy display, for example
   dbg <= cr;
+  dbg_t_clks <= t_clks;
   
 end SYN;

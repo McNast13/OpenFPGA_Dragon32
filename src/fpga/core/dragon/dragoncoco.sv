@@ -105,7 +105,8 @@ module dragoncoco(
   output              dbg_reset_n,
   output              dbg_clk_e,
   output              dbg_clk_q,
-  output              dbg_spd_ena
+  output              dbg_spd_ena,
+  output       [1:0]   dbg_t_clks
 );
 
 
@@ -482,7 +483,8 @@ mc6883 sam(
 
 			.WR_CK_ENA(WR_CK_ENA),
 			
-			.dbg()//sam_dbg
+			.dbg(),//sam_dbg
+			.dbg_t_clks(dbg_t_clks)
 );
 
 /*

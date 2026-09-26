@@ -347,3 +347,17 @@ Added sticky "ever glitched low after being high" latches for
 pll_dragon_locked, reset_n_dragon, and dbg_reset_n - cheap, no new RTL
 taps needed. Reused red/blue/orange (same association, extended meaning).
 Rebuilding to test.
+
+## 2026-09-26 — hardware test (glitch latches) — black again
+
+None of the three glitch latches fired - rules out a later reset/PLL
+glitch too. spd_ena stalled with clk/reset both confirmed stable the
+whole time, and its generator (mc6883.vhd's Tm process) is unconditionally
+free-running otherwise. No remaining RTL-reading-level theory left.
+
+Added a direct tap on Tm's own t_clks counter (the most fundamental
+signal in this chain - if this isn't incrementing, nothing downstream
+could be), reusing mc6883.vhd's existing-but-unconnected dbg port pattern
+for the wiring. Extended the color scheme with a brightness progression
+(black=t_clks stalled, dark gray=spd_ena stalled instead, gray=clk_E,
+light gray=clk_Q). Rebuilding to test.

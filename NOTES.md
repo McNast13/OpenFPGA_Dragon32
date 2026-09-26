@@ -417,6 +417,33 @@ already exist in `core_top.v`. Reused red/blue/orange for these (same
 mean "went low again later"), checked *before* the `spd_ena` black check
 since any of them would be the more fundamental explanation.
 
+**Result: black again** — none of the three glitch latches ever fired.
+Rules out a later reset/PLL glitch too. `spd_ena` is stalled, with
+`clk`/`reset` both confirmed stable and correct the whole time, and its
+generator (`mc6883.vhd`'s `Tm` process) is *unconditionally* free-running
+otherwise — there's no remaining theory left at the RTL-reading level that
+explains this without more direct visibility.
+
+Found that `mc6883.vhd` already has an existing (previously unconnected)
+16-bit `dbg` output port (`dbg <= cr`, SAM's own control register — useful
+context: `r_mpu_rate` inside it, which gates `spd_ena`'s fast/slow
+selection, correctly resets to `"00"` matching `spd_rate_normal`, so
+that's not a mismatch either). Rather than wire up that broader register,
+added a new, more targeted tap: `dbg_t_clks`, directly exposing the `Tm`
+process's own 2-bit divide-by-4 counter — the single most fundamental
+signal in this whole chain. If *this* isn't incrementing, nothing
+downstream ever could be, settling the question once and for all.
+
+Extended the color scheme with a clean brightness progression (darkest =
+most fundamental, all neutrals per the colorblind-friendly preference):
+
+|Color|Means|
+|-|-|
+|Black|`t_clks` itself never increments — the most basic possible cause|
+|Dark gray|`t_clks` fine, `spd_ena` stalled anyway|
+|Gray|`spd_ena` fine, `clk_E` stalled anyway|
+|Light gray|`clk_E` fine, `clk_Q` stalled|
+
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores
   (input plan, above) — needed for phase 3, not this gate.
 - `roms/chrrom` — check what this actually contains before deciding whether
