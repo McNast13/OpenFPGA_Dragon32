@@ -253,3 +253,15 @@ Added two debug taps to dragoncoco.sv (`dbg_cpu_addr`, `dbg_reset_n` - see
 NOTES.md "Debugging the stuck @ screen") and extended the diagnostic
 overlay to check whether the CPU is actually executing at all. Rebuilding
 to test.
+
+## 2026-09-26 — hardware test (round 2 diagnostic) — magenta
+
+Internal reset released, but `cpu_addr` never moved in half a second -
+genuinely halted. Ruled out `mc6809i.v`'s NMI handling (edge-triggered,
+wouldn't explain a persistent freeze from a stuck line) and
+`dragoncoco.sv`'s own `halt` signal (hardwired to constant 0 when
+`dragon=1'b1`, independent of the disk controller). Added a third debug
+tap (`dbg_clk_e`, SAM's own E-clock output that paces the CPU's
+sequencer per `mc6809i.v`'s own clocking comments) with a toggle
+detector, to split "SAM's clock generation is stuck" from "CPU-specific
+problem." See NOTES.md for the reasoning. Rebuilding to test.

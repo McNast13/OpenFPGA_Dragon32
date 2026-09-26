@@ -276,6 +276,31 @@ green if it moved) — using two timed snapshots on the same safe
 "is the CPU actually executing" from "is it executing wrong/writing to
 the wrong place."
 
+**Result: magenta.** Internal reset released, `cpu_addr` never moved at
+all in half a second — genuinely halted, not just slow (ruled out
+coincidental same-address sampling: at our clock rate, half a second is
+tens of thousands of real CPU cycles even accounting for the slowdown).
+
+Checked `mc6809i.v`'s NMI handling: it's edge-triggered
+(`~NMISample & NMISample2`), not level-sensitive, so a stuck-high `nmi`
+line (sourced from `fdc`'s `NMI_09` — plausible territory given
+`disk_cart_enabled=0`) would only fire once, not explain a persistent
+freeze on its own. Checked `dragoncoco.sv`'s own `halt` signal: it's
+hardwired `dragon ? 1'b0 : fdc_halt` — with `dragon=1'b1`, `halt` is a
+constant 0 regardless of the disk controller, ruling that out too.
+
+Next suspect: `mc6883` (SAM) generates the CPU's own `clk_E`/`clk_Q`
+pacing clocks from `clk` — per `mc6809i.v`'s own comments, its sequencer
+only advances on `Q`/`E` edges, so if SAM's E/Q generation is stuck for
+any reason, the CPU freezes regardless of its reset state. Added a third
+debug tap, `dbg_clk_e` (dragoncoco's internal `clk_E`), with a sticky
+toggle-detector (round 3): does `clk_E` ever toggle at all?
+
+|Color|Means|
+|-|-|
+|White (new)|Internal reset released, but SAM's `clk_E` never toggled — points at SAM/clocking, not the CPU or memory|
+|Magenta (redefined)|`clk_E` *is* toggling, but `cpu_addr` still never changed — genuinely CPU-specific|
+
 ## Open items for phase 1
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores

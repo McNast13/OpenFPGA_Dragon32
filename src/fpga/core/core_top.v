@@ -572,6 +572,7 @@ data_loader #(
     wire        dragon_hblank, dragon_vblank, dragon_hsync, dragon_vsync;
     wire [15:0] dbg_cpu_addr;
     wire        dbg_reset_n;
+    wire        dbg_clk_e;
 
 dragoncoco dragon (
     .clk            ( clk_dragon ),
@@ -653,7 +654,8 @@ dragoncoco dragon (
     .CASS_REWIND_RECORD( 1'b0 ),
 
     .dbg_cpu_addr   ( dbg_cpu_addr ),
-    .dbg_reset_n    ( dbg_reset_n )
+    .dbg_reset_n    ( dbg_reset_n ),
+    .dbg_clk_e      ( dbg_clk_e )
 );
 
 // TEMPORARY DIAGNOSTIC BUILD, round 2 - see NOTES.md "Debugging the stuck
@@ -663,30 +665,38 @@ dragoncoco dragon (
 // even after waiting well past what our ~4x-slowed clock should need. So
 // this isn't just slow, something's actually stuck.
 //
-// This checks two more gates, using dragoncoco.sv's own internal
-// reset_n (distinct from our reset_n_dragon - dragoncoco.sv has its own
-// startup reset counter) and whether cpu_addr ever changes at all - taking
-// two snapshots ~0.25s and ~0.75s after boot and comparing them, using
-// clk_core_12288 (safe, independent of clk_dragon) as usual:
+// Round 2 came back magenta: dragoncoco's internal reset released, but
+// cpu_addr never changed at all in half a second - genuinely halted, not
+// just slow. Round 3 splits that further: is SAM's own clk_E output (which
+// paces the CPU - see mc6809i.v's clocking scheme; if E/Q never toggle,
+// the CPU's own sequencer is frozen regardless of reset state) ever
+// toggling at all? If not, this is a SAM/clocking problem, not something
+// wrong with the CPU or memory specifically.
 //
 //   RED     - dragon_pll never locked
 //   BLUE    - reset_n_dragon never released
 //   YELLOW  - boot ROM never written
 //   ORANGE  - dragoncoco's *internal* reset_n never released
-//   MAGENTA - internal reset released, but cpu_addr never changed at all
-//             in half a second - genuinely halted/frozen
+//   WHITE   - internal reset released, but SAM's clk_E never toggled at
+//             all - the CPU can't be running without this
+//   MAGENTA - clk_E is toggling, but cpu_addr never changed anyway -
+//             genuinely CPU-specific
 //   GREEN   - cpu_addr IS changing - the CPU is executing, so the bug is
 //             in memory mapping/content, not execution
 
     wire        dbg_reset_n_s;
     wire [15:0] dbg_cpu_addr_s;
+    wire        dbg_clk_e_s;
 synch_3 s_diag_ireset (dbg_reset_n, dbg_reset_n_s, clk_core_12288);
 synch_3 #(.WIDTH(16)) s_diag_pc (dbg_cpu_addr, dbg_cpu_addr_s, clk_core_12288);
+synch_3 s_diag_clke (dbg_clk_e, dbg_clk_e_s, clk_core_12288);
 
     reg  [23:0] sample_counter = 0;
     reg  [15:0] cpu_addr_snapshot_a = 0;
     reg         snapshot_a_taken = 0;
     reg         cpu_alive = 0;
+    reg         dbg_clk_e_prev = 0;
+    reg         clk_e_ever_toggled = 0;
     localparam SAMPLE_A = 24'd3_072_000;  // ~0.25s @ 12.288MHz
     localparam SAMPLE_B = 24'd9_216_000;  // ~0.75s @ 12.288MHz
 always @(posedge clk_core_12288) begin
@@ -699,15 +709,19 @@ always @(posedge clk_core_12288) begin
         && dbg_cpu_addr_s != cpu_addr_snapshot_a) begin
         cpu_alive <= 1'b1;
     end
+
+    dbg_clk_e_prev <= dbg_clk_e_s;
+    if (dbg_clk_e_s != dbg_clk_e_prev) clk_e_ever_toggled <= 1'b1;
 end
 
     wire [23:0] diag_color =
-        ~pll_dragon_locked_s ? 24'hFF0000 :  // red
-        ~reset_n_dragon_s    ? 24'h0000FF :  // blue
-        ~rom_ever_written_s  ? 24'hFFFF00 :  // yellow
-        ~dbg_reset_n_s       ? 24'hFF8000 :  // orange
-        ~cpu_alive           ? 24'hFF00FF :  // magenta
-                               24'h00FF00;   // green
+        ~pll_dragon_locked_s  ? 24'hFF0000 :  // red
+        ~reset_n_dragon_s     ? 24'h0000FF :  // blue
+        ~rom_ever_written_s   ? 24'hFFFF00 :  // yellow
+        ~dbg_reset_n_s        ? 24'hFF8000 :  // orange
+        ~clk_e_ever_toggled   ? 24'hFFFFFF :  // white
+        ~cpu_alive            ? 24'hFF00FF :  // magenta
+                                24'h00FF00;   // green
 
     reg rom_ever_written = 1'b0;
 always @(posedge clk_dragon) begin

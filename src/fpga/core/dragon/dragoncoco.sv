@@ -102,7 +102,8 @@ module dragoncoco(
   // the machine is confirmed booting correctly - see NOTES.md "Debugging
   // the stuck @ screen".
   output       [15:0]  dbg_cpu_addr,
-  output              dbg_reset_n
+  output              dbg_reset_n,
+  output              dbg_clk_e
 );
 
 
@@ -902,5 +903,6 @@ Cassette_Write CoCo3_Cassette_Write(
 // TEMPORARY DEBUG TAPS - see the port list above
 assign dbg_cpu_addr = cpu_addr;
 assign dbg_reset_n = reset_n;
+assign dbg_clk_e = clk_E;
 
 endmodule
