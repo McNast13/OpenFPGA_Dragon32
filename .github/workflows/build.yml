@@ -5,8 +5,9 @@ name: Build core
 # macOS) and packages a ready-to-install release zip as a workflow artifact.
 #
 # Quartus version: pinned to 18.1, matching the sibling ../OpenFPGA_ZX-Spectrum
-# project's proven setup. Revisit if the openFPGA template ever requires a
-# newer Quartus IP generation.
+# project's workflow (though that one has no run history of its own to
+# confirm against - this is templated from it, not proven by it). Revisit
+# if the openFPGA template ever requires a newer Quartus IP generation.
 
 on:
   push:
@@ -18,6 +19,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Free disk space
+        # The raetro/quartus image is large enough that pulling it fills
+        # the default runner's disk outright ("no space left on device"
+        # mid-pull) unless the preinstalled Android/.NET/GHC/CodeQL/Docker
+        # image caches are cleared first.
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          docker-images: false
+
       - name: Checkout
         uses: actions/checkout@v4
 
