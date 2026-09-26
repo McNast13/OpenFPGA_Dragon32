@@ -581,12 +581,6 @@ data_loader #(
 
     wire [7:0]  dragon_red, dragon_green, dragon_blue;
     wire        dragon_hblank, dragon_vblank, dragon_hsync, dragon_vsync;
-    wire [15:0] dbg_cpu_addr;
-    wire        dbg_reset_n;
-    wire        dbg_clk_e;
-    wire        dbg_clk_q;
-    wire        dbg_spd_ena;
-    wire [1:0]  dbg_t_clks;
 
 dragoncoco dragon (
     .clk            ( clk_dragon ),
@@ -665,275 +659,31 @@ dragoncoco dragon (
     .sd_buff_din    (  ),
     .sd_buff_wr     ( 1'b0 ),
 
-    .CASS_REWIND_RECORD( 1'b0 ),
-
-    .dbg_cpu_addr   ( dbg_cpu_addr ),
-    .dbg_reset_n    ( dbg_reset_n ),
-    .dbg_clk_e      ( dbg_clk_e ),
-    .dbg_clk_q      ( dbg_clk_q ),
-    .dbg_spd_ena    ( dbg_spd_ena ),
-    .dbg_t_clks     ( dbg_t_clks )
+    .CASS_REWIND_RECORD( 1'b0 )
 );
 
-// TEMPORARY DIAGNOSTIC BUILD, round 2 - see NOTES.md "Debugging the stuck
-// @ screen". Real video passthrough (previous version, git history has
-// it) showed 16 rows of "@" - the VDG's decode of all-zero video RAM, i.e.
-// the CPU never got as far as writing BASIC's banner - and stayed that way
-// even after waiting well past what our ~4x-slowed clock should need. So
-// this isn't just slow, something's actually stuck.
+// Real video passthrough. dragoncoco.sv runs entirely in the clk_dragon
+// domain (see dragon_pll.v), so the scaler's pixel clock is clk_dragon
+// itself - clk_dragon_90deg is dp1's matching 90-degree-shifted output,
+// mirroring how mf_pllbase below provides the same pair for the (now
+// unused for video) 12.288MHz core clock.
 //
-// Round 2 came back magenta: dragoncoco's internal reset released, but
-// cpu_addr never changed at all in half a second - genuinely halted, not
-// just slow. Round 3 splits that further: is SAM's own clk_E output (which
-// paces the CPU - see mc6809i.v's clocking scheme; if E/Q never toggle,
-// the CPU's own sequencer is frozen regardless of reset state) ever
-// toggling at all? If not, this is a SAM/clocking problem, not something
-// wrong with the CPU or memory specifically.
-//
-//   RED     - dragon_pll never locked
-//   BLUE    - reset_n_dragon never released
-//   YELLOW  - boot ROM never written
-//   ORANGE  - dragoncoco's *internal* reset_n never released
-//   WHITE   - internal reset released, but SAM's clk_E never toggled at
-//             all - the CPU can't be running without this
-//   MAGENTA - clk_E is toggling, but cpu_addr never changed anyway -
-//             genuinely CPU-specific
-//   GREEN   - cpu_addr IS changing - the CPU is executing, so the bug is
-//             in memory mapping/content, not execution
-
-    wire        dbg_reset_n_s;
-    wire [15:0] dbg_cpu_addr_s;
-    wire        dbg_clk_e_s;
-    wire        dbg_clk_q_s;
-    wire        dbg_spd_ena_s;
-    wire [1:0]  dbg_t_clks_s;
-synch_3 s_diag_ireset (dbg_reset_n, dbg_reset_n_s, clk_core_12288);
-synch_3 #(.WIDTH(16)) s_diag_pc (dbg_cpu_addr, dbg_cpu_addr_s, clk_core_12288);
-synch_3 s_diag_clke (dbg_clk_e, dbg_clk_e_s, clk_core_12288);
-synch_3 s_diag_clkq (dbg_clk_q, dbg_clk_q_s, clk_core_12288);
-synch_3 s_diag_spdena (dbg_spd_ena, dbg_spd_ena_s, clk_core_12288);
-synch_3 #(.WIDTH(2)) s_diag_tclks (dbg_t_clks, dbg_t_clks_s, clk_core_12288);
-
-    reg  [23:0] sample_counter = 0;
-    reg  [15:0] cpu_addr_snapshot_a = 0;
-    reg         snapshot_a_taken = 0;
-    reg         cpu_alive = 0;
-    reg         dbg_clk_e_prev = 0;
-    reg         dbg_clk_q_prev = 0;
-    reg         dbg_spd_ena_prev = 0;
-    reg  [1:0]  dbg_t_clks_prev = 0;
-    reg  [19:0] clke_watchdog = 0;
-    reg  [19:0] clkq_watchdog = 0;
-    reg  [19:0] spdena_watchdog = 0;
-    reg  [19:0] tclks_watchdog = 0;
-    reg         clke_active_at_sampleB = 0;
-    reg         clkq_active_at_sampleB = 0;
-    reg         spdena_active_at_sampleB = 0;
-    reg         tclks_active_at_sampleB = 0;
-    localparam SAMPLE_A = 24'd3_072_000;  // ~0.25s @ 12.288MHz
-    localparam SAMPLE_B = 24'd9_216_000;  // ~0.75s @ 12.288MHz
-    // If clk_E/clk_Q/spd_ena haven't toggled in ~10ms, they're stalled -
-    // real E/Q toggles far more often than that even heavily slowed down.
-    // Round 4's check only asked "did clk_E ever toggle even once", which
-    // a single edge right at reset release would already satisfy without
-    // it continuing to run - this checks it's still actively toggling
-    // right before sample B. clk_Q is checked the same way, separately -
-    // the CPU needs both phases (see mc6809i.v's own clocking comments).
-    // spd_ena (SAM's own internal clock-enable pulse, exposed here as
-    // dragoncoco.sv's clk_enable wire) gates SAM's entire E/Q-generating
-    // state machine (mc6883.vhd's PROC_MAIN only advances "if spd_ena='1'")
-    // - if IT'S stalled, that's the deeper root cause behind clk_E/clk_Q
-    // both freezing, not a separate, unrelated problem.
-    localparam CLKE_STALL_THRESHOLD = 20'd122_880;  // ~10ms @ 12.288MHz
-always @(posedge clk_core_12288) begin
-    if (sample_counter != {24{1'b1}}) sample_counter <= sample_counter + 1'b1;
-    if (sample_counter == SAMPLE_A) begin
-        cpu_addr_snapshot_a <= dbg_cpu_addr_s;
-        snapshot_a_taken <= 1'b1;
-    end
-    if (sample_counter == SAMPLE_B && snapshot_a_taken
-        && dbg_cpu_addr_s != cpu_addr_snapshot_a) begin
-        cpu_alive <= 1'b1;
-    end
-
-    dbg_clk_e_prev <= dbg_clk_e_s;
-    if (dbg_clk_e_s != dbg_clk_e_prev) begin
-        clke_watchdog <= 0;
-    end else if (clke_watchdog != {20{1'b1}}) begin
-        clke_watchdog <= clke_watchdog + 1'b1;
-    end
-    if (sample_counter == SAMPLE_B) begin
-        clke_active_at_sampleB <= (clke_watchdog < CLKE_STALL_THRESHOLD);
-    end
-
-    dbg_clk_q_prev <= dbg_clk_q_s;
-    if (dbg_clk_q_s != dbg_clk_q_prev) begin
-        clkq_watchdog <= 0;
-    end else if (clkq_watchdog != {20{1'b1}}) begin
-        clkq_watchdog <= clkq_watchdog + 1'b1;
-    end
-    if (sample_counter == SAMPLE_B) begin
-        clkq_active_at_sampleB <= (clkq_watchdog < CLKE_STALL_THRESHOLD);
-    end
-
-    dbg_spd_ena_prev <= dbg_spd_ena_s;
-    if (dbg_spd_ena_s != dbg_spd_ena_prev) begin
-        spdena_watchdog <= 0;
-    end else if (spdena_watchdog != {20{1'b1}}) begin
-        spdena_watchdog <= spdena_watchdog + 1'b1;
-    end
-    if (sample_counter == SAMPLE_B) begin
-        spdena_active_at_sampleB <= (spdena_watchdog < CLKE_STALL_THRESHOLD);
-    end
-
-    dbg_t_clks_prev <= dbg_t_clks_s;
-    if (dbg_t_clks_s != dbg_t_clks_prev) begin
-        tclks_watchdog <= 0;
-    end else if (tclks_watchdog != {20{1'b1}}) begin
-        tclks_watchdog <= tclks_watchdog + 1'b1;
-    end
-    if (sample_counter == SAMPLE_B) begin
-        tclks_active_at_sampleB <= (tclks_watchdog < CLKE_STALL_THRESHOLD);
-    end
-end
-
-// spd_ena stalled, and SAM's Tm process generating it is a trivial
-// free-running counter gated only by clk/reset - nothing else can stop it
-// from within. Round 3 already proved clk_E genuinely toggled at some
-// point (not "never worked"), so the leading theory now is that
-// something re-asserts reset (or the PLL unlocks) *later*, after things
-// briefly ran - not caught by any check so far, since they all test
-// current-level-at-one-sample-point, not "did this go low again after
-// going high". Cheap to check with signals already in this file (no new
-// dragoncoco.sv taps needed): sticky "ever glitched low after being high"
-// latches for pll_dragon_locked and both reset signals.
-    reg pll_ever_glitched = 0;
-    reg pll_was_locked = 0;
-    reg rst_dragon_ever_glitched = 0;
-    reg rst_dragon_was_high = 0;
-    reg ireset_ever_glitched = 0;
-    reg ireset_was_high = 0;
-always @(posedge clk_core_12288) begin
-    if (pll_dragon_locked_s) pll_was_locked <= 1'b1;
-    if (pll_was_locked && ~pll_dragon_locked_s) pll_ever_glitched <= 1'b1;
-
-    if (reset_n_dragon_s) rst_dragon_was_high <= 1'b1;
-    if (rst_dragon_was_high && ~reset_n_dragon_s) rst_dragon_ever_glitched <= 1'b1;
-
-    if (dbg_reset_n_s) ireset_was_high <= 1'b1;
-    if (ireset_was_high && ~dbg_reset_n_s) ireset_ever_glitched <= 1'b1;
-end
-
-// Round 3 came back magenta again: clk_E is toggling fine, cpu_addr still
-// never moved - genuinely CPU-specific, not a SAM/clocking problem. Round
-// 4: rather than another yes/no gate, show WHERE it's frozen - the top 2
-// bits of the frozen address split the Dragon 32 memory map into RAM low
-// ($0000-3FFF), RAM high ($4000-7FFF), ROM ($8000-BFFF - where our loaded
-// boot.rom lives), or cart/IO/vectors ($C000-FFFF, including the reset
-// vector at $FFFE). Whichever it is says a lot about what kind of bug this
-// is (stuck loop in valid ROM code vs. a bad vector jump vs. stack/RAM
-// corruption).
-
-    wire [23:0] diag_color =
-        ~pll_dragon_locked_s  ? 24'hFF0000 :  // red
-        ~reset_n_dragon_s     ? 24'h0000FF :  // blue
-        ~rom_ever_written_s   ? 24'hFFFF00 :  // yellow
-        ~dbg_reset_n_s        ? 24'hFF8000 :  // orange
-        pll_ever_glitched     ? 24'hFF0000 :  // red (reused):  pll_dragon_locked went low again after coming up
-        rst_dragon_ever_glitched ? 24'h0000FF :  // blue (reused): reset_n_dragon went low again after coming up
-        ireset_ever_glitched  ? 24'hFF8000 :  // orange (reused): dragoncoco's internal reset went low again
-        // Neutral brightness progression, darkest = most fundamental:
-        ~tclks_active_at_sampleB ? 24'h000000 :  // black:      SAM's own t_clks divider (drives spd_ena) stalled - the most basic possible cause
-        ~spdena_active_at_sampleB ? 24'h404040 :  // dark gray: t_clks fine, but spd_ena stalled anyway
-        ~clke_active_at_sampleB ? 24'h808080 :  // gray:       spd_ena fine, but clk_E stalled anyway
-        ~clkq_active_at_sampleB ? 24'hC0C0C0 :  // light gray: clk_E fine, clk_Q stalled
-        ~cpu_alive            ?
-            (cpu_addr_snapshot_a[15:14] == 2'b00 ? 24'hFF0000 :  // red:    RAM low $0000-3FFF
-             cpu_addr_snapshot_a[15:14] == 2'b01 ? 24'h0000FF :  // blue:   RAM high $4000-7FFF
-             cpu_addr_snapshot_a[15:14] == 2'b10 ? 24'hFFFF00 :  // yellow: ROM $8000-BFFF
-             cpu_addr_snapshot_a[15:1] == 15'h7FFF ? 24'h000000 :  // black: exactly $FFFE/$FFFF (the reset vector itself)
-                                                    24'hFFFFFF)  // white: elsewhere in cart/IO/vectors $C000-FFFF
-        :                       24'h00FF00;   // green
-
-    reg rom_ever_written = 1'b0;
-always @(posedge clk_dragon) begin
-    if (rom_wr) rom_ever_written <= 1'b1;
-end
-
-    wire pll_dragon_locked_s;
-    wire reset_n_dragon_s;
-    wire rom_ever_written_s;
-synch_3 s_diag_pll (pll_dragon_locked, pll_dragon_locked_s, clk_core_12288);
-synch_3 s_diag_rst (reset_n_dragon,    reset_n_dragon_s,    clk_core_12288);
-synch_3 s_diag_rom (rom_ever_written,  rom_ever_written_s,  clk_core_12288);
-
-assign video_rgb_clock = clk_core_12288;
-assign video_rgb_clock_90 = clk_core_12288_90deg;
-assign video_rgb = vidout_rgb;
-assign video_de = vidout_de;
-assign video_skip = vidout_skip;
-assign video_vs = vidout_vs;
-assign video_hs = vidout_hs;
-
-    localparam  VID_V_BPORCH = 'd10;
-    localparam  VID_V_ACTIVE = 'd240;
-    localparam  VID_V_TOTAL = 'd512;
-    localparam  VID_H_BPORCH = 'd10;
-    localparam  VID_H_ACTIVE = 'd320;
-    localparam  VID_H_TOTAL = 'd400;
-
-    reg [15:0]  frame_count;
-
-    reg [9:0]   x_count;
-    reg [9:0]   y_count;
-
-    reg [23:0]  vidout_rgb;
-    reg         vidout_de;
-    reg         vidout_skip;
-    reg         vidout_vs;
-    reg         vidout_hs;
-
-always @(posedge clk_core_12288 or negedge reset_n) begin
-
-    if(~reset_n) begin
-
-        x_count <= 0;
-        y_count <= 0;
-
-    end else begin
-        vidout_de <= 0;
-        vidout_skip <= 0;
-        vidout_vs <= 0;
-        vidout_hs <= 0;
-
-        x_count <= x_count + 1'b1;
-        if(x_count == VID_H_TOTAL-1) begin
-            x_count <= 0;
-
-            y_count <= y_count + 1'b1;
-            if(y_count == VID_V_TOTAL-1) begin
-                y_count <= 0;
-            end
-        end
-
-        if(x_count == 0 && y_count == 0) begin
-            vidout_vs <= 1;
-            frame_count <= frame_count + 1'b1;
-        end
-
-        if(x_count == 3) begin
-            vidout_hs <= 1;
-        end
-
-        vidout_rgb <= 24'h0;
-        if(x_count >= VID_H_BPORCH && x_count < VID_H_ACTIVE+VID_H_BPORCH) begin
-            if(y_count >= VID_V_BPORCH && y_count < VID_V_ACTIVE+VID_V_BPORCH) begin
-                vidout_de <= 1;
-                vidout_rgb <= diag_color;
-            end
-        end
-    end
-end
+// Simulation (GHDL + Verilator full-machine testbench, see NOTES.md) has
+// since shown the real dragoncoco/SAM/CPU RTL boots and runs correctly
+// given a properly-sequenced ROM load and reset release - the diagnostic
+// overlay that used to be here (rounds 1-9) sampled fast clk_dragon-domain
+// signals with a synchronizer clocked at clk_core_12288, a nearly-identical
+// frequency, which risked aliasing/undersampling. The "stuck at $FFFE/
+// $FFFF" readings from rounds 6-9 are suspected false negatives from that
+// diagnostic itself, not a real hardware freeze - this build removes the
+// overlay to test that directly.
+assign video_rgb_clock = clk_dragon;
+assign video_rgb_clock_90 = clk_dragon_90deg;
+assign video_rgb = {dragon_red, dragon_green, dragon_blue};
+assign video_de = ~(dragon_hblank | dragon_vblank);
+assign video_skip = 1'b0;
+assign video_vs = dragon_vsync;
+assign video_hs = dragon_hsync;
 
 
 

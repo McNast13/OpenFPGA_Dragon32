@@ -517,6 +517,59 @@ most fundamental, all neutrals per the colorblind-friendly preference):
 |Gray|`spd_ena` fine, `clk_E` stalled anyway|
 |Light gray|`clk_E` fine, `clk_Q` stalled|
 
+### Full-machine simulation — the freeze doesn't reproduce
+
+Round 9 (t_clks tap) still came back black on hardware, with no
+remaining RTL-reading-level theory. Rather than another hardware
+round-trip, built a full-machine local simulation: the real
+`dragoncoco.sv` instantiating the real `mc6809i.v`, `pia6520.v`, `dac.sv`,
+`acia.sv`, `fdc.sv`, `wd1793.sv`, `Cassette_Write.sv`, `keyboard.sv`
+unmodified, plus `mc6883.vhd` (SAM) and `ttl_74LS138.vhd` synthesized to
+Verilog via `ghdl --synth --out=verilog` (GHDL can't elaborate
+`dpram.vhd`/`dpram_1r1w.vhd` directly — they depend on the vendor-only
+`altera_mf` library — so those two got faithful hand-written Verilog
+stand-ins matching their confirmed real 1-cycle read latency; `mc6847pace`
+(VDG) got a dummy stand-in, since video content doesn't matter for this
+test).
+
+Icarus rejected too many files over legal-but-unconventional
+declaration-after-use ordering to patch by hand, so switched to
+Verilator. That needed two accommodations, both harmless and specific to
+this vendored code's style rather than real bugs:
+
+- `-Wno-PROCASSWIRE`: many signals declared `wire` are assigned inside
+  `always` blocks throughout `dragoncoco.sv`/`acia.sv`/`fdc.sv` — not
+  legal under strict IEEE 1800-2023, but clearly an accepted style
+  Quartus and other tools have always tolerated.
+- `--no-assert-case`: Verilator inserts a runtime check for SystemVerilog
+  `unique case` that failed immediately at `dragoncoco.sv:186` (the
+  `cpu_din` mux) — `rom8_cs` is *defined* as `romA_cs | rom8k_cs`, so any
+  time `romA_cs` fires, `rom8_cs` fires too, and both branches assign the
+  same value (`rom8_dout2`) anyway. Harmless in a plain `case(1'b1)`
+  priority-encoder idiom (first match wins), but it does violate `unique`
+  in the strict sense — this flag makes Verilator treat it the same way
+  every other tool already does.
+
+With that, loaded the real `boot.rom` via simulated `ioctl_wr` pulses
+(bypassing `data_loader`/the bridge, since that's separately confirmed
+working), released `trig_reset_n` only once the load finished, and ran
+it. **The CPU never freezes.** It fetches its reset vector, jumps into
+real boot code, and keeps executing dynamically — RAM-clear-style address
+ramps (`$7F8F`-`$7F92`), real code addresses (`$0109`-`$010d`), etc. — for
+the full 2ms simulated window (tens of thousands of cycles), never
+getting stuck.
+
+This directly contradicts the "stuck at $FFFE/$FFFF" hardware readings
+from rounds 6-9. `dbg_cpu_addr` itself was captured through the exact
+same `synch_3`-at-`clk_core_12288` path already suspected of
+undersampling the other fast signals — so the simplest explanation
+consistent with everything found so far is that rounds 6-9 were false
+negatives from the diagnostic's own sampling, not a real freeze in the
+machine. Reverted `core_top.v` to real video passthrough (removed the
+whole diagnostic overlay and the leftover phase-0 test-pattern
+generator) and removed the TEMPORARY DEBUG TAPS from `dragoncoco.sv` and
+`mc6883.vhd`, to test that directly on real hardware next.
+
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores
   (input plan, above) — needed for phase 3, not this gate.
 - `roms/chrrom` — check what this actually contains before deciding whether

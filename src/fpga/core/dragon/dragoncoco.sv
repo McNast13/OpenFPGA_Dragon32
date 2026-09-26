@@ -95,18 +95,7 @@ module dragoncoco(
   output 	[7:0] 		sd_buff_din[5],
   input        			sd_buff_wr,
 
-  input					CASS_REWIND_RECORD,
-
-  // TEMPORARY DEBUG TAPS - not part of upstream dragoncoco.sv, added for
-  // hardware bring-up diagnostics only (Pocket port, phase 1). Remove once
-  // the machine is confirmed booting correctly - see NOTES.md "Debugging
-  // the stuck @ screen".
-  output       [15:0]  dbg_cpu_addr,
-  output              dbg_reset_n,
-  output              dbg_clk_e,
-  output              dbg_clk_q,
-  output              dbg_spd_ena,
-  output       [1:0]   dbg_t_clks
+  input					CASS_REWIND_RECORD
 );
 
 
@@ -482,9 +471,8 @@ mc6883 sam(
 			.we_n(sam_we_n),
 
 			.WR_CK_ENA(WR_CK_ENA),
-			
-			.dbg(),//sam_dbg
-			.dbg_t_clks(dbg_t_clks)
+
+			.dbg()//sam_dbg
 );
 
 /*
@@ -903,12 +891,5 @@ Cassette_Write CoCo3_Cassette_Write(
 		.sd_buff_din(sd_buff_din[4]),
 		.sd_buff_wr(sd_buff_wr)
 );
-
-// TEMPORARY DEBUG TAPS - see the port list above
-assign dbg_cpu_addr = cpu_addr;
-assign dbg_reset_n = reset_n;
-assign dbg_clk_e = clk_E;
-assign dbg_clk_q = clk_Q;
-assign dbg_spd_ena = clk_enable;
 
 endmodule

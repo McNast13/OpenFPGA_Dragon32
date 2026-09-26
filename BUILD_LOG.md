@@ -384,3 +384,58 @@ Both components individually validated correct. Bug is in the integration
   precise ras_n/clk_E-gated latch) vs real BRAM read latency my
   combinational testbench model doesn't have. Next: extend the simulation
   with a registered memory model to try to reproduce the freeze locally.
+
+## 2026-09-27 — full-machine simulation (Verilator) — no freeze reproduced
+
+Built a full-machine testbench: the real `dragoncoco.sv` + real
+`mc6809i.v`/`pia6520.v`/`dac.sv`/`acia.sv`/`fdc.sv`/`wd1793.sv`/
+`Cassette_Write.sv`/`keyboard.sv`, plus `mc6883.vhd` and `ttl_74LS138.vhd`
+synthesized to Verilog via `ghdl --synth --out=verilog` (GHDL can't
+elaborate `dpram.vhd`/`dpram_1r1w.vhd` directly - vendor-only
+`altera_mf` dependency - so those two were replaced with hand-written
+Verilog stand-ins matching their confirmed real 1-cycle read latency;
+`mc6847pace` (VDG) was stubbed out too, since video content is irrelevant
+to this test). Compiled with Verilator (Icarus choked on legal-but-
+unconventional declaration ordering across too many files to patch by
+hand) using `--no-assert-case` (see below) and `-Wno-PROCASSWIRE`
+(pervasive `wire`-then-procedurally-assigned style throughout this
+vendored codebase - harmless, just not modern strict-IEEE style) and
+`--timing`.
+
+First run hit a genuine `unique case` violation at time 0
+(`dragoncoco.sv:186`, the `cpu_din` mux): `rom8_cs` is defined as
+`romA_cs | rom8k_cs`, so whenever `romA_cs` fires, `rom8_cs` fires too -
+both branches write the same value (`rom8_dout2`) so it's functionally
+harmless, but it does violate strict SystemVerilog `unique` semantics.
+Verilator enforces that as a runtime assertion by default; recompiled
+with `--no-assert-case` to match how every other synthesis tool (and the
+original `case(1'b1)` priority-encoder idiom) already treats it.
+
+With that resolved, loaded the real `boot.rom` via simulated `ioctl_wr`
+pulses (bypassing `data_loader`/the bridge - that mechanism is separately
+confirmed working), released `trig_reset_n` only after the load finished,
+and let it run. **Result: the CPU never freezes.** It fetches its reset
+vector, jumps into real boot code, and keeps executing (RAM-clear-style
+address ramps around `$7F8F`-`$7F92`, code around `$0109`-`$010d`, etc.)
+continuously for the full 2ms simulated window (tens of thousands of
+cycles) - dbg_cpu_addr is dynamic throughout, never stuck.
+
+This directly contradicts the "stuck at $FFFE/$FFFF" readings from
+rounds 6-9. Combined with the already-identified undersampling risk in
+that diagnostic's own CDC sampling (clk_core_12288 sampling
+clk_dragon-rate signals - nearly the same frequency), and the fact that
+`dbg_cpu_addr` itself was captured through that same flawed
+`synch_3`-at-clk_core_12288 path, the most likely explanation is that
+rounds 6-9 were **entirely false negatives from the diagnostic
+infrastructure itself** - the real RTL, given a clean ROM load and reset
+release, has no freeze.
+
+Reverted core_top.v to real video passthrough (removed the whole
+diagnostic overlay: sample-counter/watchdog/glitch-latch logic, the
+`diag_color` chain, and the leftover phase-0 test-pattern generator) and
+removed the TEMPORARY DEBUG TAPS from dragoncoco.sv and mc6883.vhd.
+Pushing this for a real hardware test - if BASIC actually boots now, the
+whole "CPU freeze" investigation resolves to "it was the diagnostic, not
+the machine." If it still doesn't boot, real video passthrough will at
+least show *something* different (a real, if wrong, picture) instead of
+a diagnostic color, which narrows things down again from a clean slate.
