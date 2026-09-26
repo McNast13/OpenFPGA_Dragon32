@@ -265,3 +265,11 @@ tap (`dbg_clk_e`, SAM's own E-clock output that paces the CPU's
 sequencer per `mc6809i.v`'s own clocking comments) with a toggle
 detector, to split "SAM's clock generation is stuck" from "CPU-specific
 problem." See NOTES.md for the reasoning. Rebuilding to test.
+
+## 2026-09-26 — hardware test (round 3 diagnostic) — magenta again
+
+`clk_E` toggles fine - ruled out SAM/clocking. Genuinely CPU-specific:
+valid clock, valid reset, `cpu_addr` still frozen. Round 4: replaced the
+single magenta case with four colors split by the frozen address's top 2
+bits across the memory map (RAM low/high, ROM, cart/IO/vectors) - see
+NOTES.md. Rebuilding to test.

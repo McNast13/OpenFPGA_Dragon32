@@ -301,6 +301,27 @@ toggle-detector (round 3): does `clk_E` ever toggle at all?
 |White (new)|Internal reset released, but SAM's `clk_E` never toggled — points at SAM/clocking, not the CPU or memory|
 |Magenta (redefined)|`clk_E` *is* toggling, but `cpu_addr` still never changed — genuinely CPU-specific|
 
+**Result: magenta again.** `clk_E` toggles fine — ruled out SAM/clocking.
+Genuinely CPU-specific: valid clock, valid reset, address bus still frozen.
+
+Round 4: rather than another yes/no gate, show *where* it's frozen. Split
+the frozen address's top 2 bits across the Dragon 32 memory map (RAM low
+`$0000-3FFF`, RAM high `$4000-7FFF`, ROM `$8000-BFFF` — where `boot.rom`
+lives — or cart/IO/vectors `$C000-FFFF`, including the reset vector at
+`$FFFE`) into four distinct colors, replacing the single magenta case:
+
+|Color|Frozen in|
+|-|-|
+|Magenta|RAM low (`$0000-3FFF`)|
+|Cyan|RAM high (`$4000-7FFF`)|
+|Purple|ROM (`$8000-BFFF`)|
+|Pink|Cart/IO/vectors (`$C000-FFFF`)|
+
+Purple would suggest a stuck loop inside otherwise-valid ROM code; pink
+would point at a bad reset/interrupt vector fetch; either RAM color would
+suggest something jumped into uninitialized memory (a stack problem, or a
+vector pointing into RAM instead of ROM).
+
 ## Open items for phase 1
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores

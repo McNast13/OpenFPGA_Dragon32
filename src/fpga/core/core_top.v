@@ -714,14 +714,28 @@ always @(posedge clk_core_12288) begin
     if (dbg_clk_e_s != dbg_clk_e_prev) clk_e_ever_toggled <= 1'b1;
 end
 
+// Round 3 came back magenta again: clk_E is toggling fine, cpu_addr still
+// never moved - genuinely CPU-specific, not a SAM/clocking problem. Round
+// 4: rather than another yes/no gate, show WHERE it's frozen - the top 2
+// bits of the frozen address split the Dragon 32 memory map into RAM low
+// ($0000-3FFF), RAM high ($4000-7FFF), ROM ($8000-BFFF - where our loaded
+// boot.rom lives), or cart/IO/vectors ($C000-FFFF, including the reset
+// vector at $FFFE). Whichever it is says a lot about what kind of bug this
+// is (stuck loop in valid ROM code vs. a bad vector jump vs. stack/RAM
+// corruption).
+
     wire [23:0] diag_color =
         ~pll_dragon_locked_s  ? 24'hFF0000 :  // red
         ~reset_n_dragon_s     ? 24'h0000FF :  // blue
         ~rom_ever_written_s   ? 24'hFFFF00 :  // yellow
         ~dbg_reset_n_s        ? 24'hFF8000 :  // orange
         ~clk_e_ever_toggled   ? 24'hFFFFFF :  // white
-        ~cpu_alive            ? 24'hFF00FF :  // magenta
-                                24'h00FF00;   // green
+        ~cpu_alive            ?
+            (cpu_addr_snapshot_a[15:14] == 2'b00 ? 24'hFF00FF :  // magenta: RAM low $0000-3FFF
+             cpu_addr_snapshot_a[15:14] == 2'b01 ? 24'h00FFFF :  // cyan:    RAM high $4000-7FFF
+             cpu_addr_snapshot_a[15:14] == 2'b10 ? 24'h8000FF :  // purple:  ROM $8000-BFFF
+                                                    24'hFF80C0)  // pink:    cart/IO/vectors $C000-FFFF
+        :                       24'h00FF00;   // green
 
     reg rom_ever_written = 1'b0;
 always @(posedge clk_dragon) begin
