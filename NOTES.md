@@ -247,6 +247,11 @@ machine, and matches the officially-simpler intended pattern for a
 If yellow persists after this, the next thing to try is implementing the
 explicit request (ZX-Spectrum's state machine is the reference for how).
 
+**Result: green.** Dropping `deferload` fixed the boot ROM load. PLL
+locked, reset released, ROM loaded — all three gates confirmed good.
+Reverted `core_top.v` back to real video passthrough (diagnostic overlay
+removed) to see whether the actual BASIC banner now appears.
+
 ## Open items for phase 1
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores

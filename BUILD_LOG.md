@@ -230,3 +230,11 @@ matching `agg23/openfpga-pokemonmini`'s simpler slot (no request needed).
 Rebuilding to test - keeping the diagnostic overlay in place one more
 round rather than reverting to real video, so a persisting yellow (if this
 guess is wrong) is still informative rather than back to a blank gray.
+
+## 2026-09-26 — hardware test (deferload fix, diagnostic build) — green!
+
+Dropping `deferload` fixed it. PLL locked, reset released, boot ROM
+loaded — all three gates confirmed good on real hardware. Reverted
+`core_top.v` to real video passthrough (removed the diagnostic overlay)
+to test whether the actual BASIC banner appears now that the boot chain is
+confirmed working end to end.
