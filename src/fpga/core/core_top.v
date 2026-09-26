@@ -499,13 +499,10 @@ core_bridge_cmd icb (
 // Dragon 32 machine clock
 //
 // dragoncoco.sv (and everything inside it) is a single-clock-domain design
-// wanting ~57.272727 MHz (16x NTSC colorburst - a real hardware constant of
-// the machine, unrelated to the Pocket's own clocking). Actually driven at
-// 57.75 MHz - see dragon_pll.v for why (a PLL timing violation at the
-// bit-exact frequency, and why the ~0.83% difference doesn't matter here).
-// Derived from the APF system reference clock via a hand-written altera_pll
-// instance - see dragon_pll.v and NOTES.md for why this didn't need
-// Quartus's IP wizard.
+// clocked at ~57.272727 MHz (16x NTSC colorburst - a real hardware constant
+// of the machine, unrelated to the Pocket's own clocking). Derived from the
+// APF system reference clock via a hand-written altera_pll instance - see
+// dragon_pll.v and NOTES.md for why this didn't need Quartus's IP wizard.
 // outclk_1 is the same frequency, phase-shifted 90 degrees, for the
 // scaler's DDIO output clock (mirrors how mf_pllbase below does the same
 // thing for its own outputs).

@@ -97,3 +97,26 @@ Fix: picked a different target frequency instead, one with a genuinely
 clean small-integer ratio to 74.25 MHz - 57.75 MHz = 74.25 x 7/9 exactly,
 about 0.83% off the real hardware's 57.272727 MHz. Irrelevant for this
 gate's purposes. Still integer-N mode.
+
+## 2026-09-26 — CI run #7 (36245568840) — compiled, timing still failed
+
+Same fitter numbers as run #5 (4,061 ALMs, 22%; 802,884 block memory bits,
+25%). Timing: still failed, same node, virtually the same magnitude
+(-10.608 ns worst case) as run #5's fractional-mode failure (-10.121 ns) -
+despite integer-N mode and a completely different, "cleaner" frequency.
+
+That similarity across three different PLL configurations (fractional
+57.272727MHz, integer 57.272727MHz [rejected outright], integer 57.75MHz)
+was the tell that this was never actually a PLL-hardware-feasibility
+problem. Checked `core_constraints.sdc`: it declares
+`set_clock_groups -asynchronous` naming each of the *existing* mf_pllbase
+clock nodes explicitly by name - and dragon_pll's two output clocks were
+never added to that list. Without that declaration, Quartus's STA was
+analyzing dp1's clock as if it needed synchronous timing against
+clk_74a/mf_pllbase's outputs, which isn't a real relationship between two
+independent PLLs - a classic missing-SDC false violation, not a real one.
+
+Fix: added dp1's two clock nodes to the existing asynchronous group in
+`core_constraints.sdc`, and reverted `dragon_pll.v` back to the bit-exact
+57.272727 MHz fractional-mode target (57.75 MHz was never actually needed -
+the frequency was fine all along).
