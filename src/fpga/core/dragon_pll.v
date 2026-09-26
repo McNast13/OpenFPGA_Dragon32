@@ -14,15 +14,20 @@
 // those strings during a normal compile - this is the same fractional-N
 // synthesis the wizard would have produced, just without needing the wizard.
 //
-// History: this frequency looked like it was causing a real timing
-// violation inside the PLL's own internal counter hardware across several
-// CI attempts (fractional mode, then integer mode at a different clean
-// frequency - see BUILD_LOG.md for both). It wasn't the frequency at all:
-// this PLL's two output clocks were simply missing from
-// core_constraints.sdc's asynchronous clock-group declaration, so Quartus's
-// STA was checking dp1's clock for synchronous timing against clk_74a and
-// mf_pllbase's clocks - a relationship that doesn't exist between two
-// independent PLLs. Fixed there, restored the bit-exact frequency here.
+// History (see BUILD_LOG.md for the full trail): this PLL's two output
+// clocks were missing from core_constraints.sdc's asynchronous clock-group
+// declaration, which caused some (not all) of a run of apparent timing
+// violations on this PLL's internal counter hardware - fixed there. But
+// after fixing that and putting the bit-exact 57.272727 MHz fractional
+// target back, the worst-case ("Slow") timing corner still failed on the
+// same node, while the other corners passed - so the fractional delta-sigma
+// modulator genuinely is tight at this frequency on top of the SDC issue.
+// Landed on integer-N mode at 57.75 MHz (74.25 MHz x 7/9 exactly, a clean
+// small-integer ratio, ~0.83% off the real hardware's 57.272727 MHz) as the
+// combination that actually closes: correct SDC + a frequency integer-N
+// mode can represent exactly, with no modulator in the path at all. The
+// frequency difference is irrelevant to phase 1's gate (booting to BASIC);
+// revisit in phase 2 if video/audio timing precision needs it back.
 //
 
 `default_nettype none
@@ -36,18 +41,18 @@ module dragon_pll (
 );
 
     // outclk_1: same frequency as outclk_0, phase-shifted 90 degrees
-    // (a quarter period at 57.272727 MHz = 1e12/57272727/4 ps = ~4365 ps).
+    // (a quarter period at 57.75 MHz = 1e12/57750000/4 ps = ~4329 ps).
     // Needed for the scaler's DDIO output clock - see core_top.v.
 
     altera_pll #(
-        .fractional_vco_multiplier("true"),
+        .fractional_vco_multiplier("false"),
         .reference_clock_frequency("74.25 MHz"),
         .operation_mode("normal"),
         .number_of_clocks(2),
-        .output_clock_frequency0("57.272727 MHz"),
+        .output_clock_frequency0("57.75 MHz"),
         .phase_shift0("0 ps"),
         .duty_cycle0(50),
-        .output_clock_frequency1("57.272727 MHz"), .phase_shift1("4365 ps"), .duty_cycle1(50),
+        .output_clock_frequency1("57.75 MHz"), .phase_shift1("4329 ps"), .duty_cycle1(50),
         .output_clock_frequency2("0 MHz"), .phase_shift2("0 ps"), .duty_cycle2(50),
         .output_clock_frequency3("0 MHz"), .phase_shift3("0 ps"), .duty_cycle3(50),
         .output_clock_frequency4("0 MHz"), .phase_shift4("0 ps"), .duty_cycle4(50),

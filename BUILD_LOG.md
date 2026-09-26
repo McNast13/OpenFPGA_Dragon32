@@ -120,3 +120,19 @@ Fix: added dp1's two clock nodes to the existing asynchronous group in
 `core_constraints.sdc`, and reverted `dragon_pll.v` back to the bit-exact
 57.272727 MHz fractional-mode target (57.75 MHz was never actually needed -
 the frequency was fine all along).
+
+## 2026-09-26 — CI run #8 (36246540253) — compiled, timing partially fixed
+
+The SDC fix worked, partially: negative slack dropped from 4 instances to
+2 (4,075 ALMs, 22%; same block memory). The "Fast" corner violations are
+gone entirely. But both "Slow" corner instances remain, on the same
+`ic|dp1|...divclk` node, and slightly *worse* than before (-10.892 ns /
+-11.013 ns vs. -10.608 ns / -10.344 ns).
+
+So both suspects were real: the missing SDC group caused some of the
+apparent violations (now fixed), but the fractional delta-sigma modulator
+genuinely doesn't have enough margin at 57.272727 MHz on this part's
+worst-case timing corner, independent of the SDC issue. Fix: switched back
+to integer-N mode at 57.75 MHz (the clean 7/9 ratio from run #6/#7) - this
+time keeping the corrected SDC as well, combining both fixes rather than
+treating them as alternatives.
