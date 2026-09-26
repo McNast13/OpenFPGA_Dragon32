@@ -651,20 +651,122 @@ dragoncoco dragon (
     .CASS_REWIND_RECORD( 1'b0 )
 );
 
-// Straight pass-through to the scaler: dragoncoco.sv already produces
-// digital RGB plus blank/sync signals every clk_dragon cycle, so there's
-// no need for the template's own test-pattern timing generator or its
-// 12.288 MHz video clock - the machine's own native clock drives the
-// scaler's DDIO output directly (see apf_top.v for why outclk_1's 90-degree
-// phase shift specifically matters there).
+// TEMPORARY DIAGNOSTIC BUILD - see NOTES.md "Debugging the gray screen".
+//
+// The intended design (see git history) drives the scaler directly from
+// dragoncoco's own clk_dragon-clocked video signals. On real hardware that
+// showed a solid gray screen indistinguishable from phase 0's test
+// pattern, with no way to tell from the picture alone which of several
+// possible causes it was (dragon_pll never locking, the machine stuck in
+// reset, the boot ROM never actually arriving, or something else entirely
+// inside dragoncoco's own video generation) - and if clk_dragon itself
+// isn't a good clock, driving video_rgb_clock from it wouldn't show
+// anything at all, which would look identical to what was reported.
+//
+// So: drive the scaler from clk_core_12288 (mf_pllbase's output - already
+// proven working in phase 0, entirely independent of dragon_pll) and show
+// one of four solid colors instead of real video, encoding exactly where
+// the machine's boot sequence actually got to:
+//
+//   RED    - dragon_pll (dp1) never locked
+//   BLUE   - dp1 locked, but reset_n_dragon never released
+//   YELLOW - reset released, but the boot ROM was never written at all
+//   GREEN  - all three look fine - the bug is elsewhere (most likely
+//            inside dragoncoco's own video timing, or the CPU not
+//            executing correctly)
+//
+// Revert to real video passthrough once this narrows down which it is.
 
-assign video_rgb_clock = clk_dragon;
-assign video_rgb_clock_90 = clk_dragon_90deg;
-assign video_rgb = {dragon_red, dragon_green, dragon_blue};
-assign video_de = ~(dragon_hblank | dragon_vblank);
-assign video_skip = 1'b0;
-assign video_vs = dragon_vsync;
-assign video_hs = dragon_hsync;
+    reg rom_ever_written = 1'b0;
+always @(posedge clk_dragon) begin
+    if (rom_wr) rom_ever_written <= 1'b1;
+end
+
+    wire pll_dragon_locked_s;
+    wire reset_n_dragon_s;
+    wire rom_ever_written_s;
+synch_3 s_diag_pll (pll_dragon_locked, pll_dragon_locked_s, clk_core_12288);
+synch_3 s_diag_rst (reset_n_dragon,    reset_n_dragon_s,    clk_core_12288);
+synch_3 s_diag_rom (rom_ever_written,  rom_ever_written_s,  clk_core_12288);
+
+    wire [23:0] diag_color =
+        ~pll_dragon_locked_s ? 24'hFF0000 :
+        ~reset_n_dragon_s    ? 24'h0000FF :
+        ~rom_ever_written_s  ? 24'hFFFF00 :
+                               24'h00FF00;
+
+// dragon_hsync/vsync/hblank/vblank/red/green/blue and clk_dragon_90deg are
+// unused while this diagnostic build drives video from clk_core_12288
+// instead - harmless (just unused-pin warnings), left as-is so the machine
+// instantiation itself doesn't need touching to revert this later.
+
+assign video_rgb_clock = clk_core_12288;
+assign video_rgb_clock_90 = clk_core_12288_90deg;
+assign video_rgb = vidout_rgb;
+assign video_de = vidout_de;
+assign video_skip = vidout_skip;
+assign video_vs = vidout_vs;
+assign video_hs = vidout_hs;
+
+    localparam  VID_V_BPORCH = 'd10;
+    localparam  VID_V_ACTIVE = 'd240;
+    localparam  VID_V_TOTAL = 'd512;
+    localparam  VID_H_BPORCH = 'd10;
+    localparam  VID_H_ACTIVE = 'd320;
+    localparam  VID_H_TOTAL = 'd400;
+
+    reg [15:0]  frame_count;
+
+    reg [9:0]   x_count;
+    reg [9:0]   y_count;
+
+    reg [23:0]  vidout_rgb;
+    reg         vidout_de;
+    reg         vidout_skip;
+    reg         vidout_vs;
+    reg         vidout_hs;
+
+always @(posedge clk_core_12288 or negedge reset_n) begin
+
+    if(~reset_n) begin
+
+        x_count <= 0;
+        y_count <= 0;
+
+    end else begin
+        vidout_de <= 0;
+        vidout_skip <= 0;
+        vidout_vs <= 0;
+        vidout_hs <= 0;
+
+        x_count <= x_count + 1'b1;
+        if(x_count == VID_H_TOTAL-1) begin
+            x_count <= 0;
+
+            y_count <= y_count + 1'b1;
+            if(y_count == VID_V_TOTAL-1) begin
+                y_count <= 0;
+            end
+        end
+
+        if(x_count == 0 && y_count == 0) begin
+            vidout_vs <= 1;
+            frame_count <= frame_count + 1'b1;
+        end
+
+        if(x_count == 3) begin
+            vidout_hs <= 1;
+        end
+
+        vidout_rgb <= 24'h0;
+        if(x_count >= VID_H_BPORCH && x_count < VID_H_ACTIVE+VID_H_BPORCH) begin
+            if(y_count >= VID_V_BPORCH && y_count < VID_V_ACTIVE+VID_V_BPORCH) begin
+                vidout_de <= 1;
+                vidout_rgb <= diag_color;
+            end
+        end
+    end
+end
 
 
 

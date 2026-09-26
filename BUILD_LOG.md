@@ -176,3 +176,20 @@ part, not a PLL configuration problem. 14.85 MHz clears it comfortably.
 
 **Ready for a hardware test** - the actual phase 1 gate (BASIC banner on
 screen) still needs the SD card / real Pocket, same as phase 0.
+
+## 2026-09-26 — first hardware test — gray screen, cause unclear
+
+Installed on the SD card along with the user's own `boot.rom`. Result:
+solid gray screen, indistinguishable from phase 0's test pattern. Confirmed
+on a second attempt (power-cycled) that this is the new build, not phase 0
+still cached/open.
+
+Can't tell from a solid-gray picture alone whether the machine is actually
+stuck (PLL, reset, ROM load) or whether the video wiring itself just can't
+show anything because `clk_dragon` isn't a trustworthy clock on real
+hardware — both would look identical from the outside. Pushed a temporary
+diagnostic build instead of guessing at a specific fix - see NOTES.md
+"Debugging the gray screen" for what it does (four solid colors encoding
+PLL lock / reset release / ROM load status, using the *other*, already-
+proven clock domain so it stays observable even if dragon_pll is the
+problem).

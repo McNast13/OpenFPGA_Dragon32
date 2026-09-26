@@ -176,6 +176,39 @@ inventory table above. Only `rtl/`, `CoCo2.sv` (for reference), and
   reads back whatever the (empty, `cart_loaded=0`) cart RAM holds. Harmless
   for the boot-to-BASIC gate.
 
+## Debugging the gray screen (2026-09-26)
+
+Phase 1's first hardware test showed a solid gray screen — visually
+indistinguishable from phase 0's test pattern (which is also a solid gray,
+RGB 60/60/60). Confirmed on a second test (power-cycled, not just a stale
+core still open) that this is the new build actually doing this, not phase
+0 still running.
+
+The problem with diagnosing this from the picture alone: if `clk_dragon`
+(from `dragon_pll`) isn't actually a good, locked clock on real hardware,
+driving `video_rgb_clock` from it directly (the original phase 1 design)
+wouldn't show *anything* — and a scaler with no valid input clock showing
+a neutral gray "no signal" screen would look exactly like what was
+reported. So the report doesn't distinguish "the machine is stuck
+somewhere" from "there's no real problem in the machine, just the video
+wiring can't be trusted to show it."
+
+Pushed a temporary diagnostic build (see `core_top.v`'s "TEMPORARY
+DIAGNOSTIC BUILD" comment) that drives the scaler from `clk_core_12288`
+(mf_pllbase's output — proven working since phase 0, entirely independent
+of `dragon_pll`) and shows one of four solid colors instead of real video:
+
+| Color | Means |
+| --- | --- |
+| Red | `dragon_pll` (`dp1`) never locked |
+| Blue | `dp1` locked, but `reset_n_dragon` never released |
+| Yellow | Reset released, but the boot ROM was never written at all |
+| Green | All three look fine — bug is elsewhere (most likely inside `dragoncoco`'s own video timing, or the CPU not executing correctly) |
+
+Whatever color comes back narrows this down a lot before spending another
+round on a specific fix. Revert to real video passthrough (git history has
+the original version) once the cause is known.
+
 ## Open items for phase 1
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores
