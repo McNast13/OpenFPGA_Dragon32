@@ -165,3 +165,14 @@ synchronous digital logic - only perceived speed and video refresh rate do
 actual gate (booting to BASIC). Revisit in phase 2, which needs correct
 video/audio timing anyway and is the right place to add a real
 `report_timing` detail pass and find out how close to 57.27 MHz is safe.
+
+## 2026-09-26 — CI run #10 (36248282773) — compiled, timing clean
+
+**Zero negative slack anywhere.** 3,884/18,480 ALMs (21%), 2,698
+registers, 802,884/3,153,920 block memory bits (25%), 100/308 RAM blocks
+(32%), 2/4 PLLs. Confirms the diagnosis across runs #5-#9: this was always
+a real ~36MHz critical-path ceiling in the machine RTL on this specific
+part, not a PLL configuration problem. 14.85 MHz clears it comfortably.
+
+**Ready for a hardware test** - the actual phase 1 gate (BASIC banner on
+screen) still needs the SD card / real Pocket, same as phase 0.
