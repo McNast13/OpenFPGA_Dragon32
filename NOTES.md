@@ -398,7 +398,24 @@ candidate): black now means `spd_ena` stalled; white is redefined to mean
 "`spd_ena` is fine, but `clk_E` stalled anyway" (a genuine puzzle if seen,
 since `clk_E` is directly gated by `spd_ena`).
 
-## Open items for phase 1
+**Result: black.** `spd_ena` itself is stalled. Its generator
+(`mc6883.vhd`'s `Tm` process, `t_clks`) is a trivial free-running counter
+gated *only* by `clk`/`reset` — nothing else can stop it once running.
+Round 3 already proved `clk_E` genuinely toggled at some point (not "never
+worked at all"), which points at "worked briefly, then something re-froze
+it" rather than "fundamentally broken from the start" — most plausibly a
+later re-assertion of `reset` (or the PLL unlocking again), neither of
+which any check so far would catch, since they all test the *current*
+level at one fixed sample point, not "did this ever go low again after
+going high."
+
+Added sticky "ever glitched low after being high" latches for
+`pll_dragon_locked`, `reset_n_dragon`, and `dbg_reset_n` (dragoncoco's own
+internal reset) — cheap, no new RTL taps needed, all three signals
+already exist in `core_top.v`. Reused red/blue/orange for these (same
+"which thing" association as the existing checks, just extended to also
+mean "went low again later"), checked *before* the `spd_ena` black check
+since any of them would be the more fundamental explanation.
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores
   (input plan, above) — needed for phase 3, not this gate.

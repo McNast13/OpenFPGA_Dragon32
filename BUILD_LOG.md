@@ -332,3 +332,18 @@ clk_enable wire) with the same watchdog, positioned before clk_E/clk_Q in
 the priority chain since it's the more fundamental candidate. Black now
 means spd_ena stalled; white is redefined to mean spd_ena is fine but
 clk_E stalled anyway. Rebuilding to test.
+
+## 2026-09-26 — hardware test (spd_ena watchdog) — black
+
+spd_ena itself stalled. Its generator (mc6883.vhd's Tm process) is a
+trivial free-running counter gated only by clk/reset - nothing else can
+stop it once running, and round 3 already proved clk_E genuinely toggled
+at some point. Points at "worked briefly, then something re-froze it" -
+most plausibly a later reset re-assertion or PLL unlock, neither of which
+any check so far catches (they all test current level at one sample
+point, not "did this go low again after going high").
+
+Added sticky "ever glitched low after being high" latches for
+pll_dragon_locked, reset_n_dragon, and dbg_reset_n - cheap, no new RTL
+taps needed. Reused red/blue/orange (same association, extended meaning).
+Rebuilding to test.

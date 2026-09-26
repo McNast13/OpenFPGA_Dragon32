@@ -780,6 +780,33 @@ always @(posedge clk_core_12288) begin
     end
 end
 
+// spd_ena stalled, and SAM's Tm process generating it is a trivial
+// free-running counter gated only by clk/reset - nothing else can stop it
+// from within. Round 3 already proved clk_E genuinely toggled at some
+// point (not "never worked"), so the leading theory now is that
+// something re-asserts reset (or the PLL unlocks) *later*, after things
+// briefly ran - not caught by any check so far, since they all test
+// current-level-at-one-sample-point, not "did this go low again after
+// going high". Cheap to check with signals already in this file (no new
+// dragoncoco.sv taps needed): sticky "ever glitched low after being high"
+// latches for pll_dragon_locked and both reset signals.
+    reg pll_ever_glitched = 0;
+    reg pll_was_locked = 0;
+    reg rst_dragon_ever_glitched = 0;
+    reg rst_dragon_was_high = 0;
+    reg ireset_ever_glitched = 0;
+    reg ireset_was_high = 0;
+always @(posedge clk_core_12288) begin
+    if (pll_dragon_locked_s) pll_was_locked <= 1'b1;
+    if (pll_was_locked && ~pll_dragon_locked_s) pll_ever_glitched <= 1'b1;
+
+    if (reset_n_dragon_s) rst_dragon_was_high <= 1'b1;
+    if (rst_dragon_was_high && ~reset_n_dragon_s) rst_dragon_ever_glitched <= 1'b1;
+
+    if (dbg_reset_n_s) ireset_was_high <= 1'b1;
+    if (ireset_was_high && ~dbg_reset_n_s) ireset_ever_glitched <= 1'b1;
+end
+
 // Round 3 came back magenta again: clk_E is toggling fine, cpu_addr still
 // never moved - genuinely CPU-specific, not a SAM/clocking problem. Round
 // 4: rather than another yes/no gate, show WHERE it's frozen - the top 2
@@ -795,6 +822,9 @@ end
         ~reset_n_dragon_s     ? 24'h0000FF :  // blue
         ~rom_ever_written_s   ? 24'hFFFF00 :  // yellow
         ~dbg_reset_n_s        ? 24'hFF8000 :  // orange
+        pll_ever_glitched     ? 24'hFF0000 :  // red (reused):  pll_dragon_locked went low again after coming up
+        rst_dragon_ever_glitched ? 24'h0000FF :  // blue (reused): reset_n_dragon went low again after coming up
+        ireset_ever_glitched  ? 24'hFF8000 :  // orange (reused): dragoncoco's internal reset went low again
         ~spdena_active_at_sampleB ? 24'h000000 :  // black:  SAM's spd_ena pulse stalled (roots clk_E/clk_Q both freezing)
         ~clke_active_at_sampleB ? 24'hFFFFFF :  // white:  spd_ena fine, but clk_E stalled anyway
         ~clkq_active_at_sampleB ? 24'h808080 :  // gray:   clk_E fine, clk_Q stalled
