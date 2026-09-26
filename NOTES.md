@@ -349,6 +349,25 @@ corrupt whatever arrives *last* — exactly the reset vector. Dropped to
 (~269ns). Kept the diagnostic overlay in place for one more test: green
 would confirm this was it; anything else means the theory's wrong.
 
+**Result: black again** — identical to before, despite the timing fix.
+That ruled out the transfer-margin theory outright (it wasn't marginal;
+changing the margin changed nothing at all).
+
+Checked the actual `~/Downloads/d32.rom` file directly (no hardware round
+trip needed) — its real bytes at offset `$3FFE-3FFF` are `B3 B4`, a
+perfectly normal reset vector pointing into ROM space. Not `$FFFE`/`$FFFF`
+at all, and not corrupted. So the ROM content was never the problem — the
+CPU isn't jumping to a bad vector value, it's never *completing* the
+vector fetch at all, and stays parked exactly where that fetch started.
+
+That reopens a real gap in round 3's `clk_E` check: it only asked "did
+`clk_E` ever toggle even once" — a single edge right as reset releases
+would already satisfy that without `clk_E` continuing to toggle
+afterward. Replaced it with a proper watchdog: is `clk_E` still actively
+toggling (no more than ~10ms since its last edge) right before the second
+snapshot, not just "did it ever move." Same white/(reused-colors) scheme
+otherwise.
+
 ## Open items for phase 1
 
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores

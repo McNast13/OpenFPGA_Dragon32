@@ -299,3 +299,18 @@ falling cumulatively behind under a tight margin would most plausibly
 corrupt whatever arrives last - exactly the reset vector. Dropped to (4,
 1), the documented minimum, for much more margin. Kept the diagnostic
 overlay in place (green would confirm this was it). Rebuilding to test.
+
+## 2026-09-26 — hardware test (timing fix) — black again, unchanged
+
+Identical result to before the timing fix - ruled that theory out
+outright (a real margin problem would be sensitive to the margin
+changing; this wasn't). Checked `~/Downloads/d32.rom` directly (local
+file, no hardware needed): its real bytes at `$3FFE-3FFF` are `B3 B4`, a
+normal reset vector into ROM. Content's fine - the CPU isn't jumping to a
+bad vector, it's never completing the fetch at all.
+
+Found a real gap in round 3's `clk_E` check: it only tested "did it ever
+toggle once", which a single edge at reset release would already satisfy
+without continued toggling. Replaced with a watchdog checking `clk_E` is
+still actively toggling (no more than ~10ms gap) right before the second
+snapshot. Rebuilding to test.

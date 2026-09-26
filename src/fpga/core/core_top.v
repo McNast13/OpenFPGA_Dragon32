@@ -707,9 +707,16 @@ synch_3 s_diag_clke (dbg_clk_e, dbg_clk_e_s, clk_core_12288);
     reg         snapshot_a_taken = 0;
     reg         cpu_alive = 0;
     reg         dbg_clk_e_prev = 0;
-    reg         clk_e_ever_toggled = 0;
+    reg  [19:0] clke_watchdog = 0;
+    reg         clke_active_at_sampleB = 0;
     localparam SAMPLE_A = 24'd3_072_000;  // ~0.25s @ 12.288MHz
     localparam SAMPLE_B = 24'd9_216_000;  // ~0.75s @ 12.288MHz
+    // If clk_E hasn't toggled in ~10ms, it's stalled - real E/Q toggles far
+    // more often than that even heavily slowed down. Round 4's check only
+    // asked "did it ever toggle even once", which a single edge right at
+    // reset release would already satisfy without it continuing to run -
+    // this checks it's still actively toggling right before sample B.
+    localparam CLKE_STALL_THRESHOLD = 20'd122_880;  // ~10ms @ 12.288MHz
 always @(posedge clk_core_12288) begin
     if (sample_counter != {24{1'b1}}) sample_counter <= sample_counter + 1'b1;
     if (sample_counter == SAMPLE_A) begin
@@ -722,7 +729,14 @@ always @(posedge clk_core_12288) begin
     end
 
     dbg_clk_e_prev <= dbg_clk_e_s;
-    if (dbg_clk_e_s != dbg_clk_e_prev) clk_e_ever_toggled <= 1'b1;
+    if (dbg_clk_e_s != dbg_clk_e_prev) begin
+        clke_watchdog <= 0;
+    end else if (clke_watchdog != {20{1'b1}}) begin
+        clke_watchdog <= clke_watchdog + 1'b1;
+    end
+    if (sample_counter == SAMPLE_B) begin
+        clke_active_at_sampleB <= (clke_watchdog < CLKE_STALL_THRESHOLD);
+    end
 end
 
 // Round 3 came back magenta again: clk_E is toggling fine, cpu_addr still
@@ -740,7 +754,7 @@ end
         ~reset_n_dragon_s     ? 24'h0000FF :  // blue
         ~rom_ever_written_s   ? 24'hFFFF00 :  // yellow
         ~dbg_reset_n_s        ? 24'hFF8000 :  // orange
-        ~clk_e_ever_toggled   ? 24'hFFFFFF :  // white
+        ~clke_active_at_sampleB ? 24'hFFFFFF :  // white
         ~cpu_alive            ?
             (cpu_addr_snapshot_a[15:14] == 2'b00 ? 24'hFF0000 :  // red:    RAM low $0000-3FFF
              cpu_addr_snapshot_a[15:14] == 2'b01 ? 24'h0000FF :  // blue:   RAM high $4000-7FFF
