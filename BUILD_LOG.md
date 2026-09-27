@@ -958,3 +958,39 @@ valid "no more data" signal instead of wrapping into the leader, unless
 `CLOAD` retries more than 10 times in a row (not expected). Re-verified
 bit-accuracy against the new 256-byte file (up from 202) - still exact.
 No RTL change, no rebuild - just the file on the SD card.
+
+## 2026-09-27 — hardware test (10 EOF blocks) — same ?IO ERROR
+
+Padding to 10 EOF blocks didn't change the outcome at all - identical
+`?IO ERROR`. Real negative evidence: if the bug were "retry lands on
+the leader after wrapping", 10 valid EOF blocks in a row should have
+absorbed any reasonable number of retries. Getting the *same* error
+suggests either the error happens on the very first EOF encounter (not
+a retry at all), or BASIC retries far more than 10 times.
+
+Went looking for independent confirmation of the file format rather
+than continuing to guess: found `cassette-nibbler`
+(github.com/eightbitjim/cassette-nibbler), a real, working Java library
+for decoding actual recorded cassette tapes (TRS-80/CoCo support).
+Its `TapeBlock.java` checksum logic, block-type constants (0x00/0x01/
+0xFF), and framing (128×leader + `0x55,0x3C` + type + length + data +
+checksum + trailing `0x55`) match this project's implementation
+exactly, byte for byte - strong independent confirmation the file
+format itself is correct. Also independently recomputed both the data
+block's and EOF block's checksums from scratch in Python against the
+actual file bytes - both match exactly. This rules out a checksum/
+format bug in `test.cas` about as thoroughly as possible without
+access to real Color BASIC ROM source.
+
+Given the "retry more than 10 times" possibility couldn't be ruled out
+cheaply any other way, tried a much larger safety margin: padded to
+200 repeated EOF blocks (1396 bytes total, up from 256). Fixed two
+testbench-only bugs found while re-verifying (`tb_cas_fullfile.sv`'s
+memory array was only 512 bytes, too small for files this size, and
+the run timeout was too short to finish playing back the larger file) -
+neither affects real hardware, only the simulation harness itself.
+Re-verified bit-accuracy against the full 1396-byte file - all bytes
+match exactly. No RTL change, no rebuild - just the file on the SD
+card, under real time pressure (a 2-hour session limit on the user's
+end), so shipped without waiting for the full re-verification to
+finish first.

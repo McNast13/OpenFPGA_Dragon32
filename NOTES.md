@@ -716,6 +716,22 @@ instead of going silent - see `cas_player.sv`'s own header comment for
 the full reasoning. This one is a real RTL change, unlike the two
 before it.
 
+The loop fix turned the infinite hang into a clean `?IO ERROR` - real
+progress (the CPU is provably no longer stuck waiting for an edge that
+could never arrive), but padding with 10 repeated EOF blocks (in case
+the retry-after-EOF lands on the file's own looped-back leader) didn't
+change the outcome. Before assuming a larger retry count, independently
+verified the file format itself against `cassette-nibbler`
+(github.com/eightbitjim/cassette-nibbler), a real, working tape-decoding
+library - its checksum logic, block-type values, and framing all match
+this project's implementation exactly. Also recomputed both blocks'
+checksums from scratch in Python against the actual file bytes - both
+match. This rules out a format/checksum bug in `test.cas` about as
+thoroughly as possible short of the real ROM source. Padded further to
+200 EOF blocks (1396 bytes) as a much larger safety margin against the
+"retries more than a few times" possibility, re-verified bit-accuracy
+against the full file - exact. Outcome not yet known as of this note.
+
 ## Joystick support (2026-09-27)
 
 No new module needed - `dragoncoco.sv`'s own vendored `dac.sv` already

@@ -14,7 +14,7 @@
 // with: xxd -p testdata/test.cas | tr -d '\n' | fold -w2 > testdata/test_cas_bytes.hex
 // - and update FILE_LEN below to match)
 module tb_cas_fullfile;
-    localparam FILE_LEN = 256;
+    localparam FILE_LEN = 1396;
 
     reg clk = 0;
     always #10 clk = ~clk;
@@ -24,7 +24,7 @@ module tb_cas_fullfile;
     reg new_file = 0;
     reg [15:0] cas_len = 0;
     wire [15:0] cas_addr;
-    reg  [7:0]  mem [0:511];
+    reg  [7:0]  mem [0:4095];
     wire [7:0]  cas_data = mem[cas_addr];
     wire        casdout;
 
@@ -93,7 +93,7 @@ module tb_cas_fullfile;
         cas_len = FILE_LEN;
         motor_on = 1;
 
-        #(3_000_000_000);
+        #(20_000_000_000);
         $display("TIMEOUT - byte_idx reached %0d, mismatches=%0d, first at %0d", byte_idx, mismatches, first_mismatch_byte);
         $finish;
     end

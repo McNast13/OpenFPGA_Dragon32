@@ -65,7 +65,7 @@ def build():
     data_block = block(0x01, list(program_text))
 
     eof_block = block(0xFF, [])
-    trailing_eofs = eof_block * 10
+    trailing_eofs = eof_block * 200
 
     return leader + filename_block + data_block + trailing_eofs
 
