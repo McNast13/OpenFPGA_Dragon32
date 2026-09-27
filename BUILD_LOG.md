@@ -439,3 +439,26 @@ whole "CPU freeze" investigation resolves to "it was the diagnostic, not
 the machine." If it still doesn't boot, real video passthrough will at
 least show *something* different (a real, if wrong, picture) instead of
 a diagnostic color, which narrows things down again from a clean slate.
+
+## 2026-09-27 — hardware test (real video passthrough) — it boots!
+
+**Phase 1's core gate is met.** Real Dragon BASIC `OK` prompt on screen,
+green background - that's the authentic default Color BASIC alphanumeric
+screen (green background, white text), not a bug. Confirms rounds 6-9's
+"stuck at $FFFE/$FFFF" were exactly what the full-machine simulation
+predicted: false negatives from the diagnostic's own undersampling, not a
+real freeze. The machine has been fine since the ROM-load fix; only the
+watchdog reading it was broken.
+
+One real cosmetic bug found on this same test: oversized/stretched text.
+Root cause: `video.json` declared a 320x240 scaler canvas, left over from
+phase 0's test pattern, but `mc6847pace.vhd`'s real CVBS timing (with
+`overscan` tied to 0, as core_top.v does) only marks the true 256x192
+alphanumeric window as active - the border is blanked. Feeding a real
+256x192 active stream into a scaler expecting 320x240 stretches
+everything unevenly, which is exactly "oversized text" with no other
+visible artifacts. Fixed by correcting `video.json` to declare 256x192
+(handily already exactly 4:3, so aspect_w/aspect_h needed no change).
+No RTL change needed - core_top.v's `video_de` already tracks the real
+256x192 window correctly since it's a direct passthrough of
+dragoncoco.sv's hblank/vblank. Rebuilding to test.

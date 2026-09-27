@@ -570,6 +570,28 @@ whole diagnostic overlay and the leftover phase-0 test-pattern
 generator) and removed the TEMPORARY DEBUG TAPS from `dragoncoco.sv` and
 `mc6883.vhd`, to test that directly on real hardware next.
 
+### Phase 1 gate met — and the actual native resolution
+
+Real hardware test with the diagnostic overlay removed: the Dragon boots
+straight to a real BASIC `OK` prompt, green background (the genuine
+default Color BASIC alphanumeric screen colors — not a bug). Confirms the
+full-machine simulation's prediction: rounds 6-9 were false negatives
+from the diagnostic itself, not a real freeze.
+
+One real bug surfaced by this same test: oversized/stretched text.
+`mc6847pace.vhd`'s CVBS timing constants (`H_LEFT_BORDER`/`H_VIDEO` and
+`V2_TOP_BORDER`/`V2_VIDEO`) show the true active-display window is
+**256×192** pixels, and with `overscan` tied to `0` (as `core_top.v`
+does), `hblank`/`vblank` track exactly that narrow window — the border is
+blanked, not included. `video.json` still declared the phase-0 test
+pattern's 320×240 canvas, so the scaler was stretching a real 256×192
+stream to fit a canvas a third larger, unevenly, which is exactly
+"oversized text" with no other artifacts. Fixed by correcting
+`video.json` to 256×192 (already exactly 4:3, so `aspect_w`/`aspect_h`
+needed no change). No RTL change needed - `core_top.v`'s `video_de` was
+already a correct direct passthrough of dragoncoco.sv's `hblank`/
+`vblank`.
+
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores
   (input plan, above) — needed for phase 3, not this gate.
 - `roms/chrrom` — check what this actually contains before deciding whether
