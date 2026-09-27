@@ -384,7 +384,7 @@ end
 // bridge target commands
 // synchronous to clk_74a
 
-    reg             target_dataslot_read;       
+    reg             target_dataslot_read = 1'b0;
     reg             target_dataslot_write;
     reg             target_dataslot_getfile;    // require additional param/resp structs to be mapped
     reg             target_dataslot_openfile;   // require additional param/resp structs to be mapped
@@ -574,22 +574,100 @@ data_loader #(
     .write_data ( rom_data )
 );
 
-// Cassette (.cas) loading: a second, independent data slot/data_loader
-// pair - see data.json's "Cassette" slot ("address": "0x10000000", so
-// ADDRESS_MASK_UPPER_4 is 4'h1 here, distinct from the boot ROM's 4'h0).
-// Unlike the boot ROM, this slot is optional and user-reloadable at any
-// time (data.json's "parameters": 11 sets that bit) - the platform
-// delivers a freshly-selected file the same way it delivers the boot ROM
-// (plain bridge writes into this slot's address range), just triggered
-// by the user picking a file from the Pocket's menu instead of happening
-// once at boot. See cassette/cas_player.sv's header for the tape format
-// and playback details, and cassette/cas_ram.sv for the buffer itself.
+// Cassette (.cas) loading. First hardware test hung forever on CLOAD -
+// root cause (confirmed against Analogue's own host/target-command docs,
+// see BUILD_LOG.md): this slot is optional and user-reloadable at any
+// time (data.json's "parameters": 11), and for a slot reloaded while the
+// core is already running, the platform does NOT push its bytes via
+// plain bridge writes the way it does for the boot ROM at cold boot - it
+// only fires dataslot_update with the new file's size. Actually getting
+// the bytes requires the core to explicitly issue a target_dataslot_read
+// request into a bridge scratch address of its own choosing, then wait
+// for target_dataslot_ack and target_dataslot_done. Without that, cas_len
+// still ended up set (from dataslot_update_size) while cas_ram stayed all
+// zero - cas_player dutifully "played" a file-shaped block of silence
+// with no valid leader tone in it, which is exactly a CLOAD that waits
+// forever, matching what actually happened.
+//
+// This state machine runs on clk_74a, matching core_bridge_cmd's own
+// domain (target_dataslot_*/dataslot_update are declared "synchronous to
+// clk_74a" at this file's own port list) - not clk_dragon. 0x60000000 is
+// the scratch bridge address chosen for this (arbitrary but conventional -
+// e.g. OpenFPGA_ZX-Spectrum's own on-demand loader uses the same address
+// for the same purpose). Requests the whole file in a single shot -
+// Analogue's docs don't document a hard per-request size limit, and
+// realistic Dragon 32 tape files are nowhere near this cas_ram's 64KB.
+    localparam CAS_LOAD_IDLE      = 2'd0;
+    localparam CAS_LOAD_WAIT_ACK  = 2'd1;
+    localparam CAS_LOAD_WAIT_DONE = 2'd2;
+
+    reg [1:0]  cas_load_state = CAS_LOAD_IDLE;
+    reg        dataslot_update_74a_prev = 1'b0;
+    reg        cas_ready_toggle_74a = 1'b0;
+    reg [31:0] cas_loaded_size_74a = 32'd0;
+
+always @(posedge clk_74a) begin
+    dataslot_update_74a_prev <= dataslot_update;
+
+    case (cas_load_state)
+        CAS_LOAD_IDLE: begin
+            if (dataslot_update && !dataslot_update_74a_prev && dataslot_update_id == 16'd1) begin
+                target_dataslot_id         <= 16'd1;
+                target_dataslot_slotoffset <= 32'd0;
+                target_dataslot_bridgeaddr <= 32'h60000000;
+                target_dataslot_length     <= dataslot_update_size;
+                cas_loaded_size_74a        <= dataslot_update_size;
+                target_dataslot_read       <= 1'b1;
+                cas_load_state             <= CAS_LOAD_WAIT_ACK;
+            end
+        end
+        CAS_LOAD_WAIT_ACK: begin
+            if (target_dataslot_ack) begin
+                target_dataslot_read <= 1'b0;
+                cas_load_state       <= CAS_LOAD_WAIT_DONE;
+            end
+        end
+        CAS_LOAD_WAIT_DONE: begin
+            if (target_dataslot_done) begin
+                // Toggle (not a one-cycle pulse) crossing clk_74a ->
+                // clk_dragon - a single-cycle pulse risks being missed
+                // entirely by an asynchronous receiving clock domain;
+                // an edge on a synchronized toggle bit can't be missed
+                // the same way. cas_loaded_size_74a is plain multi-bit
+                // synchronized below, safe here since it's held stable
+                // from well before this toggle edge until well after.
+                cas_ready_toggle_74a <= ~cas_ready_toggle_74a;
+                cas_load_state       <= CAS_LOAD_IDLE;
+            end
+        end
+        default: cas_load_state <= CAS_LOAD_IDLE;
+    endcase
+end
+
+    wire        cas_ready_toggle_dragon;
+    wire [31:0] cas_loaded_size_dragon;
+synch_3 s_cas_ready (cas_ready_toggle_74a, cas_ready_toggle_dragon, clk_dragon);
+synch_3 #(.WIDTH(32)) s_cas_size (cas_loaded_size_74a, cas_loaded_size_dragon, clk_dragon);
+
+    reg         cas_ready_toggle_dragon_prev = 1'b0;
+    wire        cas_new_file = (cas_ready_toggle_dragon != cas_ready_toggle_dragon_prev);
+    reg  [15:0] cas_len = 16'd0;
+always @(posedge clk_dragon) begin
+    cas_ready_toggle_dragon_prev <= cas_ready_toggle_dragon;
+    if (cas_new_file) cas_len <= cas_loaded_size_dragon[15:0];
+end
+
+// The requested bytes land via plain bridge writes into the scratch
+// address requested above (0x60000000) once target_dataslot_done fires -
+// this data_loader just needs to watch that address now, not the slot's
+// own data.json "address" field (which is only relevant for delivery at
+// cold boot, not an on-demand reload while running).
     wire            cas_wr;
     wire    [15:0]  cas_wr_addr;
     wire    [7:0]   cas_wr_data;
 
 data_loader #(
-    .ADDRESS_MASK_UPPER_4 ( 4'h1 ),
+    .ADDRESS_MASK_UPPER_4 ( 4'h6 ),
     .ADDRESS_SIZE         ( 16 ),
     .WRITE_MEM_CLOCK_DELAY( 4 ),
     .WRITE_MEM_EN_CYCLE_LENGTH( 1 )
@@ -606,28 +684,6 @@ data_loader #(
     .write_addr ( cas_wr_addr ),
     .write_data ( cas_wr_data )
 );
-
-// dataslot_update fires (with dataslot_update_id matching the Cassette
-// slot's id, 1) once the platform finishes delivering a file into it -
-// dataslot_update_size is that file's real length in bytes, exactly what
-// cas_player.sv needs to know when it's read the last valid byte. Both
-// dataslot_update/_id/_size are already declared above (core_bridge_cmd's
-// own outputs) and synchronous to clk_74a - synchronized into clk_dragon
-// the same way cont3_key etc. are above.
-    wire        dataslot_update_s;
-    wire [15:0] dataslot_update_id_s;
-    wire [31:0] dataslot_update_size_s;
-synch_3 s_dataslot_update (dataslot_update, dataslot_update_s, clk_dragon);
-synch_3 #(.WIDTH(16)) s_dataslot_update_id (dataslot_update_id, dataslot_update_id_s, clk_dragon);
-synch_3 #(.WIDTH(32)) s_dataslot_update_size (dataslot_update_size, dataslot_update_size_s, clk_dragon);
-
-    reg         dataslot_update_prev = 1'b0;
-    wire        cas_new_file = dataslot_update_s && !dataslot_update_prev && (dataslot_update_id_s == 16'd1);
-    reg  [15:0] cas_len = 16'd0;
-always @(posedge clk_dragon) begin
-    dataslot_update_prev <= dataslot_update_s;
-    if (cas_new_file) cas_len <= dataslot_update_size_s[15:0];
-end
 
     wire [15:0] cas_addr;
     wire [7:0]  cas_data;

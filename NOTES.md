@@ -654,6 +654,19 @@ hardware/format specification, not anyone's source code. See
 frequencies are expressed relative to the machine's original 57,272,727Hz
 design frequency rather than `clk_dragon`'s actual (slower) rate.
 
+First hardware test hung forever on CLOAD - see BUILD_LOG.md for the full
+diagnosis. Root cause was a wrong assumption about data slot delivery:
+an optional, user-reloadable-while-running slot doesn't get its bytes
+pushed via plain bridge writes the way the boot ROM does at cold boot -
+the platform only fires `dataslot_update` with the size, and the core
+must explicitly issue a `target_dataslot_read` request (into a bridge
+scratch address of its own choosing) and wait for
+`target_dataslot_ack`/`target_dataslot_done` before the bytes actually
+arrive. `data.json`'s `"address": "0x10000000"` field for this slot is
+now vestigial - delivery happens into whatever scratch address
+`core_top.v` requests (`0x60000000`) instead, and nothing reads that
+field for this slot's actual data path any more.
+
 ## Joystick support (2026-09-27)
 
 No new module needed - `dragoncoco.sv`'s own vendored `dac.sv` already

@@ -622,3 +622,50 @@ on either axis, it's a one-line fix once observed.
 No dedicated testbench for this one - pure combinational muxing on top of
 the already-proven `synch_3` synchronizer pattern, and `dac.sv`'s own
 protocol emulation isn't code this change touches at all.
+
+## 2026-09-27 — hardware test (cassette) — hung forever on CLOAD
+
+User loaded `test.cas` via the Pocket's menu, typed `CLOAD` - screen
+stuck showing a single `S` in the top-left corner, unchanged after 30
+minutes. Genuinely hung, not just slow: worst case (every bit at the
+slower 1200Hz rate) the whole 329-byte file should finish in ~8 seconds
+at this clock rate.
+
+Root cause, confirmed by directly asking Analogue's own host/target-
+command docs the exact question: for a data slot that's optional and
+user-reloadable *while the core is already running* (this slot's
+situation - `data.json`'s `"parameters": 11`), the platform does **not**
+push the file's bytes via plain bridge writes into the slot's declared
+address the way it does for the boot ROM at cold boot. It only fires
+`dataslot_update` with the new file's size - actually getting the bytes
+requires the core to explicitly issue a `target_dataslot_read` request
+into a bridge scratch address of the core's own choosing, then wait for
+`target_dataslot_ack`/`target_dataslot_done`.
+
+The previous implementation only watched for plain bridge writes into
+the slot's own `data.json` address (`0x10000000`), which never arrived -
+`cas_ram` stayed all zero, while `cas_len` still got set correctly from
+`dataslot_update_size` (that part *did* fire). So `cas_player` had a
+valid-looking length and dutifully "played" 329 zero bytes: every bit a
+1200Hz cycle, no alternating pattern anywhere, so no valid leader tone
+for Color BASIC's bit-sync search to ever lock onto. Not silence, but
+functionally the same to a routine that's waiting for a specific pattern
+- an infinite, patient wait, matching exactly what was observed.
+
+Fixed with a proper request/ack/done state machine, in `core_top.v`,
+running on `clk_74a` (matching where `target_dataslot_*`/`dataslot_update`
+actually live - not `clk_dragon`, which was a subtlety the earlier
+version got right by accident, having never actually driven any target
+command). Requests the whole file in one shot into scratch address
+`0x60000000` (a conventional choice - `OpenFPGA_ZX-Spectrum`'s own
+on-demand loader uses the same address for the same purpose); no
+documented hard per-request size limit, and real Dragon 32 tape files
+are nowhere near this buffer's 64KB, so no chunking needed. The existing
+`cas_data_loader` (a plain `data_loader` watching for bridge writes) is
+still exactly right for actually capturing the bytes once the platform
+delivers them - it just needed to watch `0x60000000` instead of the
+slot's own declared address, since that's where `target_dataslot_read`
+actually lands them. A toggle (not a raw pulse) carries the "data's
+ready" signal across the `clk_74a`/`clk_dragon` boundary, since a
+single-cycle pulse risks being missed entirely by an asynchronous
+receiving clock. Rebuilding to test.
