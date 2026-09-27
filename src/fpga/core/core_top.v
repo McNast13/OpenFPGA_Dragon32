@@ -574,29 +574,62 @@ data_loader #(
     .write_data ( rom_data )
 );
 
-// Cassette (.cas) loading. First hardware test hung forever on CLOAD -
-// root cause (confirmed against Analogue's own host/target-command docs,
-// see BUILD_LOG.md): this slot is optional and user-reloadable at any
-// time (data.json's "parameters": 11), and for a slot reloaded while the
-// core is already running, the platform does NOT push its bytes via
-// plain bridge writes the way it does for the boot ROM at cold boot - it
-// only fires dataslot_update with the new file's size. Actually getting
-// the bytes requires the core to explicitly issue a target_dataslot_read
-// request into a bridge scratch address of its own choosing, then wait
-// for target_dataslot_ack and target_dataslot_done. Without that, cas_len
-// still ended up set (from dataslot_update_size) while cas_ram stayed all
-// zero - cas_player dutifully "played" a file-shaped block of silence
-// with no valid leader tone in it, which is exactly a CLOAD that waits
-// forever, matching what actually happened.
+// Cassette (.cas) loading. Two independent delivery paths, since a
+// hardware test proved the platform doesn't always use the one the first
+// two attempts assumed - see BUILD_LOG.md for the full trail. Whichever
+// one actually fires for a given user action is the one that matters;
+// both feed the same cas_ram/cas_len/cas_new_file downstream.
 //
-// This state machine runs on clk_74a, matching core_bridge_cmd's own
-// domain (target_dataslot_*/dataslot_update are declared "synchronous to
-// clk_74a" at this file's own port list) - not clk_dragon. 0x60000000 is
-// the scratch bridge address chosen for this (arbitrary but conventional -
-// e.g. OpenFPGA_ZX-Spectrum's own on-demand loader uses the same address
-// for the same purpose). Requests the whole file in a single shot -
-// Analogue's docs don't document a hard per-request size limit, and
-// realistic Dragon 32 tape files are nowhere near this cas_ram's 64KB.
+// Path 1 - boot-time / pre-selected file: mirrors the boot ROM's own
+// mechanism exactly - plain bridge writes into this slot's own declared
+// data.json address ("0x10000000"). A hardware test showed this is the
+// path actually used (dataslot_update never fired at all, even before
+// CLOAD was typed - the "red, right from boot" diagnostic result) when a
+// cassette file is selected as part of launching the core, or remembered
+// from a previous session. No clean "transfer complete" signal exists
+// for this path, so cas_boot_len just tracks the highest written address
+// seen + 1, continuously - harmless even though this "restarts" the file
+// position on every single byte while it arrives, since cas_player stays
+// idle (motor off, BASIC hasn't run CLOAD yet) for the whole, brief,
+// very-early window this delivery actually happens in.
+    wire            cas_boot_wr;
+    wire    [15:0]  cas_boot_wr_addr;
+    wire    [7:0]   cas_boot_wr_data;
+
+data_loader #(
+    .ADDRESS_MASK_UPPER_4 ( 4'h1 ),
+    .ADDRESS_SIZE         ( 16 ),
+    .WRITE_MEM_CLOCK_DELAY( 4 ),
+    .WRITE_MEM_EN_CYCLE_LENGTH( 1 )
+) cas_boot_data_loader (
+    .clk_74a               ( clk_74a ),
+    .clk_memory             ( clk_dragon ),
+
+    .bridge_wr              ( bridge_wr ),
+    .bridge_endian_little   ( bridge_endian_little ),
+    .bridge_addr            ( bridge_addr ),
+    .bridge_wr_data         ( bridge_wr_data ),
+
+    .write_en   ( cas_boot_wr ),
+    .write_addr ( cas_boot_wr_addr ),
+    .write_data ( cas_boot_wr_data )
+);
+
+// Path 2 - live reload while the core is already running (this slot's
+// "parameters": 11 sets the User Reloadable bit, for picking a different
+// file from the running core's interact menu). Confirmed against
+// Analogue's own host/target-command docs: for this case the platform
+// does NOT push bytes via plain bridge writes - it only fires
+// dataslot_update with the new file's size, and the core has to
+// explicitly issue a target_dataslot_read request into a bridge scratch
+// address of its own choosing, then wait for target_dataslot_ack and
+// target_dataslot_done. This state machine runs on clk_74a, matching
+// core_bridge_cmd's own domain. 0x60000000 is the scratch address chosen
+// (arbitrary but conventional - e.g. OpenFPGA_ZX-Spectrum's own
+// on-demand loader uses the same address for the same purpose). Requests
+// the whole file in one shot - no documented hard per-request size
+// limit, and real Dragon 32 tape files are nowhere near this buffer's
+// 64KB.
     localparam CAS_LOAD_IDLE      = 2'd0;
     localparam CAS_LOAD_WAIT_ACK  = 2'd1;
     localparam CAS_LOAD_WAIT_DONE = 2'd2;
@@ -650,28 +683,18 @@ synch_3 s_cas_ready (cas_ready_toggle_74a, cas_ready_toggle_dragon, clk_dragon);
 synch_3 #(.WIDTH(32)) s_cas_size (cas_loaded_size_74a, cas_loaded_size_dragon, clk_dragon);
 
     reg         cas_ready_toggle_dragon_prev = 1'b0;
-    wire        cas_new_file = (cas_ready_toggle_dragon != cas_ready_toggle_dragon_prev);
-    reg  [15:0] cas_len = 16'd0;
-always @(posedge clk_dragon) begin
-    cas_ready_toggle_dragon_prev <= cas_ready_toggle_dragon;
-    if (cas_new_file) cas_len <= cas_loaded_size_dragon[15:0];
-end
+    wire        cas_live_new_file = (cas_ready_toggle_dragon != cas_ready_toggle_dragon_prev);
 
-// The requested bytes land via plain bridge writes into the scratch
-// address requested above (0x60000000) once target_dataslot_done fires -
-// this data_loader just needs to watch that address now, not the slot's
-// own data.json "address" field (which is only relevant for delivery at
-// cold boot, not an on-demand reload while running).
-    wire            cas_wr;
-    wire    [15:0]  cas_wr_addr;
-    wire    [7:0]   cas_wr_data;
+    wire            cas_live_wr;
+    wire    [15:0]  cas_live_wr_addr;
+    wire    [7:0]   cas_live_wr_data;
 
 data_loader #(
     .ADDRESS_MASK_UPPER_4 ( 4'h6 ),
     .ADDRESS_SIZE         ( 16 ),
     .WRITE_MEM_CLOCK_DELAY( 4 ),
     .WRITE_MEM_EN_CYCLE_LENGTH( 1 )
-) cas_data_loader (
+) cas_live_data_loader (
     .clk_74a               ( clk_74a ),
     .clk_memory             ( clk_dragon ),
 
@@ -680,10 +703,27 @@ data_loader #(
     .bridge_addr            ( bridge_addr ),
     .bridge_wr_data         ( bridge_wr_data ),
 
-    .write_en   ( cas_wr ),
-    .write_addr ( cas_wr_addr ),
-    .write_data ( cas_wr_data )
+    .write_en   ( cas_live_wr ),
+    .write_addr ( cas_live_wr_addr ),
+    .write_data ( cas_live_wr_data )
 );
+
+// Both paths share one cas_ram write port and one cas_len/cas_new_file -
+// only one path is ever actually active for a given real user action, so
+// a simple priority mux (boot path first) is enough; there's no real
+// scenario where both fire in the same cycle.
+    wire        cas_wr      = cas_boot_wr | cas_live_wr;
+    wire [15:0] cas_wr_addr = cas_boot_wr ? cas_boot_wr_addr : cas_live_wr_addr;
+    wire [7:0]  cas_wr_data = cas_boot_wr ? cas_boot_wr_data : cas_live_wr_data;
+    wire        cas_new_file = cas_boot_wr | cas_live_new_file;
+
+    reg  [15:0] cas_len = 16'd0;
+always @(posedge clk_dragon) begin
+    if (cas_boot_wr && (cas_boot_wr_addr + 16'd1 > cas_len))
+        cas_len <= cas_boot_wr_addr + 16'd1;
+    else if (cas_live_new_file)
+        cas_len <= cas_loaded_size_dragon[15:0];
+end
 
     wire [15:0] cas_addr;
     wire [7:0]  cas_data;
@@ -785,31 +825,37 @@ synch_3 #(.WIDTH(32)) s_cont2_joy (cont2_joy, cont2_joy_s, clk_dragon);
     wire [7:0] joy2_y = cont2_key_s[1] ? 8'd255 : cont2_key_s[0] ? 8'd0 : cont2_joy_s[15:8];
 
 // TEMPORARY DIAGNOSTIC - cassette load still hangs on CLOAD after the
-// target_dataslot_read fix (see BUILD_LOG.md). Small top-right corner
-// patch, real video everywhere else, so this doesn't have to replace
-// the whole screen the way phase 1's diagnostic did - the "S" hang
+// target_dataslot_read fix (see BUILD_LOG.md). The first hardware test
+// with this diagnostic came back solid red, even before CLOAD ran -
+// meaning dataslot_update (the live-reload path) never fired at all,
+// which is what led to adding the boot-time path back above. Small
+// top-right corner patch, real video everywhere else, so the hang
 // itself stays visible the whole time this is checked.
 //
 // Sticky "ever happened" latches, checked in priority order (earliest
 // failure wins) - primary/neutral colors only:
-//   RED    - dataslot_update for the Cassette slot (id 1) never arrived
-//            at all - the file-select action itself never reached here
-//   ORANGE - update arrived, but target_dataslot_ack never came back -
-//            the read request itself was never acknowledged
-//   YELLOW - ack came back, but target_dataslot_done never fired - the
-//            transfer was acknowledged but never completed
-//   BLUE   - done fired, but cas_new_file never reached clk_dragon - a
-//            CDC bug in the toggle crossing
+//   RED    - neither delivery path ever triggered at all - the file
+//            select action itself never reached here, via either path
+//   ORANGE - the live-reload path (dataslot_update) is the one that
+//            triggered, but target_dataslot_ack never came back
+//   YELLOW - ack came back, but target_dataslot_done never fired
+//   BLUE   - the file arrived (either path), but cas_new_file never
+//            reached clk_dragon - a CDC bug in the toggle crossing
 //   WHITE  - cas_new_file fired (cas_len should be set), but motor_on
 //            (cas_relay) never asserts - BASIC never turned the tape
-//            motor on, unrelated to the loading fix itself
+//            motor on, unrelated to loading itself
 //   BLACK  - motor asserted, but casdout never toggled - a cas_player bug
 //   GREEN  - casdout did toggle - the pipeline is fine, so the remaining
 //            problem is in the file's own content/format, or how CLOAD
 //            interprets it, not in delivery
-    reg dbg_update_seen_74a = 1'b0;
-    reg dbg_ack_seen_74a    = 1'b0;
-    reg dbg_done_seen_74a   = 1'b0;
+// cas_boot_wr is itself already in the clk_dragon domain (data_loader's
+// write_en is driven inside its own "always @(posedge clk_memory)", not
+// clk_74a - confirmed by reading pocket_utils/data_loader.sv directly),
+// so its sticky latch belongs with the other clk_dragon-domain latches
+// below, not synchronized from a clk_74a copy that would never see it.
+    reg dbg_update_seen_74a  = 1'b0;
+    reg dbg_ack_seen_74a     = 1'b0;
+    reg dbg_done_seen_74a    = 1'b0;
 always @(posedge clk_74a) begin
     if (dataslot_update && dataslot_update_id == 16'd1) dbg_update_seen_74a <= 1'b1;
     if (target_dataslot_ack)  dbg_ack_seen_74a  <= 1'b1;
@@ -817,25 +863,31 @@ always @(posedge clk_74a) begin
 end
 
     wire dbg_update_seen, dbg_ack_seen, dbg_done_seen;
-synch_3 s_dbg_update (dbg_update_seen_74a, dbg_update_seen, clk_dragon);
-synch_3 s_dbg_ack    (dbg_ack_seen_74a,    dbg_ack_seen,    clk_dragon);
-synch_3 s_dbg_done   (dbg_done_seen_74a,   dbg_done_seen,   clk_dragon);
+synch_3 s_dbg_update  (dbg_update_seen_74a,  dbg_update_seen,  clk_dragon);
+synch_3 s_dbg_ack     (dbg_ack_seen_74a,     dbg_ack_seen,     clk_dragon);
+synch_3 s_dbg_done    (dbg_done_seen_74a,    dbg_done_seen,    clk_dragon);
 
+    reg dbg_boot_wr_seen  = 1'b0;
     reg dbg_new_file_seen = 1'b0;
     reg dbg_motor_seen    = 1'b0;
     reg dbg_casdout_toggled = 1'b0;
     reg dbg_casdout_prev  = 1'b0;
 always @(posedge clk_dragon) begin
+    if (cas_boot_wr) dbg_boot_wr_seen <= 1'b1;
     if (cas_new_file) dbg_new_file_seen <= 1'b1;
     if (dragon_cas_relay) dbg_motor_seen <= 1'b1;
     dbg_casdout_prev <= dragon_casdout;
     if (dragon_casdout != dbg_casdout_prev) dbg_casdout_toggled <= 1'b1;
 end
 
+    wire dbg_arrived = dbg_boot_wr_seen | dbg_update_seen;
+    // ack/done are only meaningful for the live-reload path - skip them
+    // (fall straight through to the new_file/motor/casdout checks) if
+    // the boot-time path is the one that actually delivered the file.
     wire [23:0] cas_diag_color =
-        ~dbg_update_seen   ? 24'hFF0000 : // red
-        ~dbg_ack_seen      ? 24'hFF8000 : // orange
-        ~dbg_done_seen     ? 24'hFFFF00 : // yellow
+        ~dbg_arrived                                          ? 24'hFF0000 : // red
+        (dbg_update_seen && !dbg_boot_wr_seen && ~dbg_ack_seen)  ? 24'hFF8000 : // orange
+        (dbg_update_seen && !dbg_boot_wr_seen && ~dbg_done_seen) ? 24'hFFFF00 : // yellow
         ~dbg_new_file_seen ? 24'h0000FF : // blue
         ~dbg_motor_seen    ? 24'hFFFFFF : // white
         ~dbg_casdout_toggled ? 24'h000000 : // black

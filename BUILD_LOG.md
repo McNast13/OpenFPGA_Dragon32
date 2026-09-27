@@ -684,3 +684,43 @@ ever firing (yellow), `cas_new_file` ever reaching `clk_dragon` (blue),
 (black) - green if all of those happened, meaning the loading pipeline
 itself is fine and the remaining bug is in the file's content/format or
 how CLOAD interprets it, not in delivery. Rebuilding to test.
+
+## 2026-09-27 — hardware test (diagnostic) — red, before CLOAD even ran
+
+Red square visible from the moment the core loads, before CLOAD is ever
+typed - meaning `dataslot_update` for the Cassette slot never fires at
+all in this user's actual workflow (loading `test.cas` via however the
+Pocket's menu presents it). That's the live-reload path's trigger - if
+it never fires, `target_dataslot_read` never gets issued, so of course
+nothing downstream progresses.
+
+This points at the file being selected as part of *launching* the core
+(or remembered from a previous session) rather than reloaded from an
+already-running core's interact menu - a case the very first cassette
+implementation actually handled correctly in principle (plain bridge
+writes into the slot's own declared address, same mechanism as the boot
+ROM), before it got replaced entirely by the target_dataslot_read
+mechanism on the assumption that was the only path that mattered. Worth
+being honest about what's actually confirmed vs. not: the first
+implementation *also* hung with the same "S stuck" symptom, and there
+was no diagnostic yet to say whether that was because the boot-time path
+doesn't work either, or because of some other issue entirely. Redoing
+that experiment blind wouldn't add anything.
+
+Fixed by supporting **both** delivery paths simultaneously - re-added the
+boot-time `data_loader` (watching `0x10000000`, exactly the original
+approach) alongside the `target_dataslot_read` live-reload path, feeding
+the same `cas_ram`/`cas_len`/`cas_new_file` from whichever one actually
+fires. Extended the diagnostic to add a `cas_boot_wr` sticky latch and
+adjusted the color chain so it skips the ack/done checks (live-reload-
+specific) when the boot path is the one that actually delivered the
+file, instead of showing a misleading orange/yellow. Caught and fixed a
+real bug while doing this: the new `cas_boot_wr` latch was first written
+sampling a `clk_dragon`-domain signal (`data_loader`'s `write_en`,
+confirmed by reading `pocket_utils/data_loader.sv` directly - it's driven
+inside `always @(posedge clk_memory)`) inside a `clk_74a`-domain always
+block, an actual CDC bug caught by re-reading the diff before shipping
+it, not by a hardware round-trip. Moved that latch to `clk_dragon`, where
+it belongs and needs no synchronizer at all. Rebuilding - this diagnostic
+run should tell us definitively whether either path now actually
+delivers the file.
