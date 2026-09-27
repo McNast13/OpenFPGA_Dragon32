@@ -781,3 +781,28 @@ corruption that produces a garbage line number like "8272". Regenerated
 re-verified bit-accuracy against the corrected file (still all 329 bytes
 match). This is a test-file-only fix - no RTL change, no rebuild needed,
 just replacing `test.cas` on the SD card.
+
+## 2026-09-27 — hardware test (corrected test.cas) — progress, but stalls
+
+Real progress this time: after `CLOAD`, the screen shows `F TEST`
+(BASIC's own "found TEST" display - matches the ASCII+MODE byte fix
+actually taking effect) and then hangs there - confirmed a genuine stall
+(user waited 30+ seconds, well past what a slow load should need), not
+just "still working". One more visual detail worth keeping in mind but
+not chasing yet: the `F` specifically has a black background, unlike the
+rest of the line - could be a normal Color BASIC "search in progress"
+cursor indicator, or could be a stray write landing in video memory.
+
+The existing diagnostic's later stages are all *sticky* ("did this ever
+happen") - fine for catching a pipeline that never starts at all, but
+useless for telling "still actively reading" apart from "read started,
+then got stuck partway through", which is exactly this new symptom.
+Added a live watchdog: resets whenever `cas_addr` (the tape player's
+read position) changes, flags a stall (new cyan color) if it hasn't
+moved in ~1 second despite the motor being on and the read not yet
+having reached the end of the file. Green now specifically means
+"still progressing right now, or successfully finished" - cyan means
+"started, then got stuck at a fixed position". Rebuilding to test -
+this should say definitively whether `cas_player`/`cas_ram` themselves
+are stuck, or whether the real machine (CPU/SAM/PIA) is what's not
+progressing despite tape data continuing to arrive correctly.

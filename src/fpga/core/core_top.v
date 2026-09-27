@@ -880,6 +880,29 @@ always @(posedge clk_dragon) begin
     if (dragon_casdout != dbg_casdout_prev) dbg_casdout_toggled <= 1'b1;
 end
 
+// The checks above are all sticky ("did this ever happen") - fine for
+// catching a pipeline that never starts, but a hardware test showed
+// CLOAD progressing further this time (reaching "F TEST", i.e. finding
+// the filename) then hanging with no further progress - a stall
+// *partway through*, which a purely sticky "casdout toggled at least
+// once" check can't distinguish from "still actively working". This
+// watchdog resets whenever cas_addr (the tape player's read position)
+// changes, and flags a stall if it hasn't moved in ~1 second despite the
+// motor being on and the read not yet having reached the end of the file.
+    reg  [15:0] cas_addr_prev = 16'hFFFF;
+    reg  [23:0] cas_stall_watchdog = 24'd0;
+always @(posedge clk_dragon) begin
+    cas_addr_prev <= cas_addr;
+    if (cas_addr != cas_addr_prev) begin
+        cas_stall_watchdog <= 24'd0;
+    end else if (cas_stall_watchdog != {24{1'b1}}) begin
+        cas_stall_watchdog <= cas_stall_watchdog + 1'b1;
+    end
+end
+    wire dbg_cas_stalled = dbg_motor_seen && (cas_len != 16'd0)
+                         && (cas_addr < cas_len - 16'd1)
+                         && (cas_stall_watchdog > 24'd14_850_000); // ~1s @ clk_dragon
+
     wire dbg_arrived = dbg_boot_wr_seen | dbg_update_seen;
     // ack/done are only meaningful for the live-reload path - skip them
     // (fall straight through to the new_file/motor/casdout checks) if
@@ -891,7 +914,8 @@ end
         ~dbg_new_file_seen ? 24'h0000FF : // blue
         ~dbg_motor_seen    ? 24'hFFFFFF : // white
         ~dbg_casdout_toggled ? 24'h000000 : // black
-                               24'h00FF00;  // green
+        dbg_cas_stalled      ? 24'h00FFFF : // cyan: started, then stalled mid-file
+                               24'h00FF00;  // green: still progressing, or finished
 
     wire [8:0] dragon_h_count, dragon_v_count;
     // dragon_h_count/v_count are RAW mc6847pace counters spanning the
