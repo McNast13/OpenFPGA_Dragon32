@@ -31,6 +31,19 @@ as GO (a real token, 0x81) followed by literal, unabbreviated text " TO"/
 " SUB", not a single two-word token (confirmed via a public tokens
 reference, dragon32.info/info/cocotokn.html) - so the test program uses
 "GO TO", not "GOTO".
+
+Multiple trailing EOF blocks: a hardware test with cas_player.sv looping
+the whole file at end-of-tape (rather than going silent - see that
+file's header) turned an infinite hang into a clean "?IO ERROR" for this
+file specifically - real, measurable progress (the CPU is no longer
+stuck waiting for an edge that structurally can never arrive), but the
+retry-after-EOF this exposed lands back on the leader/filename block
+(the file's own start, once cas_player wraps), which CLOAD correctly
+rejects as an unexpected header where it expected another data-or-EOF
+block. Repeating the EOF block several times gives any such retry
+another valid "no more data" signal instead, without needing to teach
+cas_player.sv anything about block boundaries (it has no concept of the
+.cas format's internal structure - it just plays bytes as tone cycles).
 """
 
 
@@ -52,8 +65,9 @@ def build():
     data_block = block(0x01, list(program_text))
 
     eof_block = block(0xFF, [])
+    trailing_eofs = eof_block * 10
 
-    return leader + filename_block + data_block + eof_block
+    return leader + filename_block + data_block + trailing_eofs
 
 
 if __name__ == "__main__":

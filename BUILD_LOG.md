@@ -923,3 +923,38 @@ test to match (was explicitly asserting silence - now asserts the
 opposite: `cas_addr` wraps to 0 and `casdout` keeps toggling). This is a
 real RTL change, not a test-file tweak - needs a rebuild and a fresh
 hardware test on both files.
+
+## 2026-09-27 — hardware test (loop fix) — real progress, new symptoms
+
+`test.cas` + `CLOAD`: no more infinite hang - now a clean `?IO ERROR`.
+Genuine progress: the CPU is no longer stuck waiting for an edge that
+structurally could never arrive (confirming the loop-fix theory), but
+what it finds on retry is this project's own file *looping back to its
+start* - the leader and filename block again - which `CLOAD` correctly
+rejects as an unexpected header block where it expected another data-or-
+EOF block. Exactly the failure mode the fix's design predicted as a
+possible next step, not a new mystery.
+
+Jet Set Willy + `CLOADM`: loading screen shows, then sticks - green
+square this time (previously magenta pre-fix), consistent with
+`cas_player` now continuously looping/still running rather than sitting
+idle - expected given the fix, but the *game itself* still hasn't
+progressed. `CLOADM`'s own machine-code loading path is different from
+ASCII `CLOAD`'s (likely closer to the "load a crunched program directly
+into memory" routine read earlier, not the character-by-character line-
+input loop `test.cas` exercises) - whether it hits the same class of
+issue or something else entirely isn't yet known; not chasing this one
+further until `test.cas` is fully resolved, to avoid diluting focus
+across two different code paths at once.
+
+Fixed the specific `test.cas` symptom without any RTL change: padded
+the file with 10 repeated EOF blocks at the end (60 bytes) instead of
+just one - `cas_player.sv` has no concept of the `.cas` format's block
+structure at all (it just plays bytes as tone cycles), so teaching it
+to loop *only* the last block specifically would need real new
+complexity; multiplying the trailing EOF blocks gives the same effect
+for free, purely as file content. Any retry-after-EOF now finds another
+valid "no more data" signal instead of wrapping into the leader, unless
+`CLOAD` retries more than 10 times in a row (not expected). Re-verified
+bit-accuracy against the new 256-byte file (up from 202) - still exact.
+No RTL change, no rebuild - just the file on the SD card.
