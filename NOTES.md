@@ -653,3 +653,15 @@ hardware/format specification, not anyone's source code. See
 `cas_player.sv`'s own header for the full writeup, including why the tone
 frequencies are expressed relative to the machine's original 57,272,727Hz
 design frequency rather than `clk_dragon`'s actual (slower) rate.
+
+## Joystick support (2026-09-27)
+
+No new module needed - `dragoncoco.sv`'s own vendored `dac.sv` already
+emulates the real DAC+comparator protocol Dragon software's joystick
+read routine expects. `core_top.v` just needed to feed `joya1`/`joya2`
+with real `cont1_joy`/`cont2_joy` data (Pocket's analog stick, with the
+d-pad overriding to a hard extreme when pressed) instead of `16'b0`. One
+unconfirmed assumption: that the Pocket's analog stick reports increasing
+value = rightward/downward, matching the polarity `dragoncoco.sv`'s own
+`joy_use_dpad` branch already uses. Needs a hardware test to confirm;
+a one-line fix if either axis comes out inverted.

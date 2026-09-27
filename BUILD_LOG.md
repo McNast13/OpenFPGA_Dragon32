@@ -589,3 +589,36 @@ exact half-cycle timing for both tone frequencies (measuring real
 steady, motor resume continuing correctly, end-of-tape silence, and
 multi-byte address advancement - all pass. Not yet tested on real
 hardware with an actual `.cas` file.
+
+## 2026-09-27 — joystick support added, not yet hardware-tested
+
+Turned out to be a small addition: `dragoncoco.sv`'s own vendored
+`dac.sv` already emulates the real DAC+comparator timing protocol Dragon
+software's joystick-read routine expects (a 6-bit DAC value walked up
+until it exceeds the joystick's position, time-multiplexed across both
+sticks' axes via SELA/SELB - see `dac.sv`'s own header table). All that
+was missing was feeding it real controller data - `joy1`/`joy2`/`joya1`/
+`joya2` were all tied to 0.
+
+Wired `cont1_joy`/`cont2_joy` (the Pocket's real analog stick position)
+through to `joya1`/`joya2` directly, with `cont1_key`/`cont2_key`'s d-pad
+bits overriding to a hard extreme (255/0) when pressed - so either an
+analog stick or the d-pad works, no menu setting needed. Confirmed the
+polarity (right/down = 255, left/up = 0) against `dragoncoco.sv`'s own
+`joy_use_dpad` branch, which already uses that exact convention
+internally. `joy1[4]`/`joy2[4]` (the fire button, mapped to face_a) feed
+straight into `dragon_keyboard.sv`'s existing `joystick_1_button`/
+`joystick_2_button` ports - already wired correctly back when the
+keyboard bridge was built, just never had real data behind them until
+now.
+
+One real unknown, not resolvable without a hardware test: whether the
+Pocket's analog stick actually reports increasing value = rightward/
+downward (the assumption both `joy1_x`/`joy1_y`'s polarity and the
+d-pad-override values rely on) - a reasonable, near-universal convention,
+but unconfirmed for this specific bridge. If movement comes out inverted
+on either axis, it's a one-line fix once observed.
+
+No dedicated testbench for this one - pure combinational muxing on top of
+the already-proven `synch_3` synchronizer pattern, and `dac.sv`'s own
+protocol emulation isn't code this change touches at all.

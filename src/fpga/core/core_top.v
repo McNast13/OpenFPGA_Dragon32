@@ -699,6 +699,35 @@ apf2hid u_apf2hid (
     .usb_kb_sc6 ( hid_sc6       )
 );
 
+// Joystick support: dragoncoco.sv's own vendored dac.sv module already
+// emulates the real DAC+comparator timing protocol Dragon software's
+// joystick-read routine expects (a 6-bit DAC value walked up until it
+// exceeds the joystick's position, time-multiplexed across both sticks'
+// axes via SELA/SELB - see dac.sv's own header table) - this only needs
+// to keep joya1/joya2 continuously fed with a plain 0-255-per-axis
+// position (dac.sv only ever compares the top 6 bits) and a fire-button
+// bit, matching exactly what dragoncoco.sv's own joy_use_dpad branch
+// already does internally for digital-only input. cont1_key/cont1_joy
+// etc. are APF bridge inputs, not natively in clk_dragon's domain - same
+// synchronization treatment as cont3_key/joy/trig above.
+    wire [31:0] cont1_key_s, cont2_key_s;
+    wire [31:0] cont1_joy_s, cont2_joy_s;
+synch_3 #(.WIDTH(32)) s_cont1_key (cont1_key, cont1_key_s, clk_dragon);
+synch_3 #(.WIDTH(32)) s_cont2_key (cont2_key, cont2_key_s, clk_dragon);
+synch_3 #(.WIDTH(32)) s_cont1_joy (cont1_joy, cont1_joy_s, clk_dragon);
+synch_3 #(.WIDTH(32)) s_cont2_joy (cont2_joy, cont2_joy_s, clk_dragon);
+
+// D-pad presses drive the axis to a hard extreme, overriding the analog
+// stick - lets either control method work with no menu setting. Pocket's
+// own dpad_up/down/left/right bit order (key bitmap comment at this
+// file's own port list, above) doesn't match dragoncoco's right/left/
+// down/up joy_use_dpad convention, but that mode isn't used here at all
+// (joy_use_dpad tied to 0 below) - only this file's own mux matters.
+    wire [7:0] joy1_x = cont1_key_s[3] ? 8'd255 : cont1_key_s[2] ? 8'd0 : cont1_joy_s[7:0];
+    wire [7:0] joy1_y = cont1_key_s[1] ? 8'd255 : cont1_key_s[0] ? 8'd0 : cont1_joy_s[15:8];
+    wire [7:0] joy2_x = cont2_key_s[3] ? 8'd255 : cont2_key_s[2] ? 8'd0 : cont2_joy_s[7:0];
+    wire [7:0] joy2_y = cont2_key_s[1] ? 8'd255 : cont2_key_s[0] ? 8'd0 : cont2_joy_s[15:8];
+
 dragoncoco dragon (
     .clk            ( clk_dragon ),
     .turbo          ( 1'b0 ),
@@ -736,11 +765,16 @@ dragoncoco dragon (
     .hid_sc5        ( hid_sc5 ),
     .hid_sc6        ( hid_sc6 ),
 
-    // controller input deferred to phase 3
-    .joy1           ( 16'b0 ),
-    .joy2           ( 16'b0 ),
-    .joya1          ( 16'b0 ),
-    .joya2          ( 16'b0 ),
+    // controller input - joy1[4]/joy2[4] are the only bits dragoncoco.sv
+    // reads unconditionally (the fire button, wired through to
+    // dragon_keyboard.sv's joystick_1_button/joystick_2_button); joy1/2's
+    // other bits are only consulted when joy_use_dpad=1, which isn't the
+    // case here (joy1_x/y above already fold the d-pad into the analog
+    // value), so they're left 0.
+    .joy1           ( {11'b0, cont1_key_s[4], 4'b0} ),
+    .joy2           ( {11'b0, cont2_key_s[4], 4'b0} ),
+    .joya1          ( {joy1_x, joy1_y} ),
+    .joya2          ( {joy2_x, joy2_y} ),
     .joy_use_dpad   ( 1'b0 ),
 
     .ioctl_data     ( rom_data ),
