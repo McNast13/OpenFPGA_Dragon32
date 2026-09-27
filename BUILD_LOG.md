@@ -846,3 +846,43 @@ expecting a motor-cycle/gap for, contradicting the earlier "gap flag"
 reading of that byte a second time - still a candidate, but changing two
 things in the same test would confound which one mattered). Rebuilding
 to test.
+
+## 2026-09-27 — hardware test (end-of-file diagnostic) — magenta
+
+Confirmed: `cas_addr` reached the last valid position. The tape side is
+provably done - every byte, including the EOF block, was delivered.
+Color BASIC still hung at `F TEST` past 60+ seconds. The entire
+remaining bug is in Color BASIC's own end-of-file detection/return-to-
+prompt logic, not in this project's RTL - `cas_player`/`cas_ram`/
+delivery are now proven correct beyond reasonable doubt (bit-accurate
+regression test, full hardware completion, two independent test files).
+
+Traced `LA701`/`LA6E5` (the actual block-read/error-check routine
+`LA635` calls) in "Color BASIC Unravelled" for more detail on EOF
+handling - confirms the same "BLKTYP negative = last block" convention
+already used, including a note that block number `$FF` specifically
+causes CLOAD to "ignore errors in the blocks it's skipping while looking
+for the correct file name" (a filename-search-specific behavior, not
+directly relevant to the data-read hang, but confirms `0xFF` is
+consistently "end of program" throughout the ROM, not just in the one
+branch already found).
+
+Given the RTL side is now fully proven, tried a cheap (test.cas-only,
+no rebuild) experiment isolating the one remaining candidate flagged
+but not yet tested alone: removed the second 128-byte leader between
+the filename and data blocks entirely (going straight from the filename
+block's own trailing magic byte into the data block's header) - the
+disassembly shows no explicit gap/motor-cycle instruction between
+finding the filename and fetching the next block, contradicting the
+"gap flag" reading of that byte that originally motivated adding it.
+Also fixed an independent, unrelated bug noticed along the way while
+re-reading the token research from earlier in this session: `GOTO`
+tokenizes as `GO` (a real token) followed by literal, unshortened text
+"` TO`" - not a single word - so the test program's second line now
+reads `20 GO TO 10` instead of `20 GOTO 10`. This wouldn't explain a
+*hang* (a tokenizing mismatch would surface as an error when that line
+runs, not block progress before then), but it's a correctness bug
+worth fixing regardless while already touching this file. Re-verified
+bit-accuracy against the new 202-byte file (down from 329 - no second
+leader) - still exact. No RTL change, no rebuild - just the file on the
+SD card.

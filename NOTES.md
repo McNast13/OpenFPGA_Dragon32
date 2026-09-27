@@ -682,9 +682,26 @@ found and fixed:
    TYPE/ASCII/MODE table and `cassette/tb_cas_fullfile.sv` for the
    bit-accurate regression test this bug prompted (measures exact
    `clk_dragon` cycle counts between every `casdout` edge and
-   reconstructs all 329 bytes of the test file, catching both this bug
-   and, earlier, a bug in the test itself that used `$realtime` deltas
+   reconstructs every byte of the test file - `FILE_LEN` in that
+   testbench must match `test.cas`'s current size - catching both this
+   bug and, earlier, a bug in the test itself that used `$realtime` deltas
    instead of exact cycle counts).
+
+After both fixes, a hardware test confirmed the *entire tape side* is
+correct beyond reasonable doubt: `cas_addr` reached the last valid
+position (a dedicated "fully consumed" diagnostic color, distinct from
+"still progressing") after the platform delivered every byte including
+the EOF block. Color BASIC still hung at `F TEST` (found the filename,
+never returned to `OK`) - the remaining bug, whatever it turns out to
+be, is entirely in Color BASIC's own end-of-file detection / ASCII
+line-input logic, not in any RTL this project owns. Removed a redundant
+second leader between the filename and data blocks (the disassembly's
+own CLOAD dispatch shows no gap/motor-cycle instruction there - it was
+based on the same "gap flag" misreading applied to sequencing, not just
+the mode byte) and fixed an independent, unrelated bug noticed along
+the way: `GOTO` isn't one word to the tokenizer (`GO` is the real
+token, followed by literal " TO") - `test.cas` now uses `GO TO`. Neither
+change has been hardware-tested yet as of this note.
 
 ## Joystick support (2026-09-27)
 

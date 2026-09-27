@@ -4,14 +4,18 @@
 // edges (not $realtime deltas - an earlier version of this test used
 // those and had its own bug, producing false mismatches - see
 // BUILD_LOG.md, 2026-09-27 "hardware test (dual-path diagnostic)").
-// Confirms all 329 bytes round-trip exactly.
+// Confirms every byte of testdata/test.cas round-trips exactly (FILE_LEN
+// below must match its current size in bytes).
 //
 // Run from this directory:
 //   iverilog -g2012 -o tb.vvp tb_cas_fullfile.sv cas_player.sv
 //   vvp tb.vvp
 // (regenerate testdata/test_cas_bytes.hex after editing testdata/test.cas
-// with: xxd -p testdata/test.cas | tr -d '\n' | fold -w2 > testdata/test_cas_bytes.hex)
+// with: xxd -p testdata/test.cas | tr -d '\n' | fold -w2 > testdata/test_cas_bytes.hex
+// - and update FILE_LEN below to match)
 module tb_cas_fullfile;
+    localparam FILE_LEN = 202;
+
     reg clk = 0;
     always #10 clk = ~clk;
 
@@ -66,9 +70,9 @@ module tb_cas_fullfile;
                             $display("MISMATCH byte %0d: expected %02h got %02h", byte_idx, mem[byte_idx], byte_acc);
                         end
                         byte_idx = byte_idx + 1;
-                        if (byte_idx == 329 && !done) begin
+                        if (byte_idx == FILE_LEN && !done) begin
                             done = 1;
-                            if (mismatches == 0) $display("ALL 329 BYTES MATCH - cas_player is bit-accurate");
+                            if (mismatches == 0) $display("ALL %0d BYTES MATCH - cas_player is bit-accurate", FILE_LEN);
                             else $display("%0d MISMATCH(ES), first at byte %0d", mismatches, first_mismatch_byte);
                             $finish;
                         end
@@ -86,7 +90,7 @@ module tb_cas_fullfile;
         reset = 1; motor_on = 0; cas_len = 0;
         repeat (3) @(posedge clk);
         reset = 0;
-        cas_len = 16'd329;
+        cas_len = FILE_LEN;
         motor_on = 1;
 
         #(3_000_000_000);

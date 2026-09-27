@@ -17,6 +17,20 @@ Color BASIC ROM disassembly ("Color BASIC Unravelled"):
   BASIC ASCII       00      FF       FF
   DATA              01      FF       FF
   MACHINE LANGUAGE  02      00       00
+
+No second leader between the filename and data blocks (an earlier
+version had one, based on the same "gap flag" misreading above applied
+to the sequencing between blocks, not just the mode byte's value) - the
+disassembly's own CLOAD dispatch (LA648 "search for file" falling
+straight through into the CASBUF+9/10 check, then LA635's block-fetch)
+shows no explicit gap/motor-cycle instruction between finding the
+filename and fetching the next block.
+
+"GOTO" is not one word to Color BASIC's tokenizer - GOTO/GOSUB tokenize
+as GO (a real token, 0x81) followed by literal, unabbreviated text " TO"/
+" SUB", not a single two-word token (confirmed via a public tokens
+reference, dragon32.info/info/cocotokn.html) - so the test program uses
+"GO TO", not "GOTO".
 """
 
 
@@ -34,12 +48,12 @@ def build():
     assert len(fn_data) == 15
     filename_block = block(0x00, fn_data)
 
-    program_text = b'10 PRINT "HELLO FROM CLAUDE"\r20 GOTO 10\r'
+    program_text = b'10 PRINT "HELLO FROM CLAUDE"\r20 GO TO 10\r'
     data_block = block(0x01, list(program_text))
 
     eof_block = block(0xFF, [])
 
-    return leader + filename_block + leader + data_block + eof_block
+    return leader + filename_block + data_block + eof_block
 
 
 if __name__ == "__main__":
