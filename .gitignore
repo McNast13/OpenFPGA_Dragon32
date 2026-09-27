@@ -11,5 +11,9 @@ src/fpga/incremental_db/
 *.vdk
 *.VDK
 
+# Exception: a small, original, hand-built test fixture (not a game or
+# copyrighted ROM) - see cassette/testdata/generate_test_cas.py
+!src/fpga/core/dragon/cassette/testdata/test.cas
+
 # OS cruft
 .DS_Store

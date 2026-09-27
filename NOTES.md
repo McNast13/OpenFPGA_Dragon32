@@ -655,17 +655,36 @@ frequencies are expressed relative to the machine's original 57,272,727Hz
 design frequency rather than `clk_dragon`'s actual (slower) rate.
 
 First hardware test hung forever on CLOAD - see BUILD_LOG.md for the full
-diagnosis. Root cause was a wrong assumption about data slot delivery:
-an optional, user-reloadable-while-running slot doesn't get its bytes
-pushed via plain bridge writes the way the boot ROM does at cold boot -
-the platform only fires `dataslot_update` with the size, and the core
-must explicitly issue a `target_dataslot_read` request (into a bridge
-scratch address of its own choosing) and wait for
-`target_dataslot_ack`/`target_dataslot_done` before the bytes actually
-arrive. `data.json`'s `"address": "0x10000000"` field for this slot is
-now vestigial - delivery happens into whatever scratch address
-`core_top.v` requests (`0x60000000`) instead, and nothing reads that
-field for this slot's actual data path any more.
+diagnosis trail (three rounds: delivery mechanism, then a real CDC bug
+caught on review, then the actual root cause). Two real, distinct bugs
+found and fixed:
+
+1. **Delivery mechanism.** An optional, user-reloadable-while-running
+   slot doesn't get its bytes pushed via plain bridge writes the way the
+   boot ROM does at cold boot - the platform only fires
+   `dataslot_update` with the size, and the core must explicitly issue a
+   `target_dataslot_read` request (into a bridge scratch address of its
+   own choosing, `0x60000000`) and wait for `target_dataslot_ack`/
+   `target_dataslot_done`. But a hardware test showed `dataslot_update`
+   itself never fires for *this* user's workflow (selecting the file as
+   part of launching the core) - so `core_top.v` now supports **both**
+   paths: the original boot-time mechanism (plain bridge writes into the
+   slot's own declared `data.json` address, `0x10000000` - still very
+   much active, not vestigial) *and* the live-reload
+   `target_dataslot_read` mechanism, feeding the same `cas_ram`/`cas_len`
+   from whichever one actually fires for a given action.
+2. **Filename block format.** Byte 10 of the filename block, documented
+   in one hardware reference as a "gap flag" ($00=no gaps), is actually
+   part of a combined ASCII+MODE selector Color BASIC's own CLOAD
+   dispatch tests directly - confirmed against the actual ROM
+   disassembly ("Color BASIC Unravelled"). See
+   `cassette/testdata/generate_test_cas.py`'s header for the authoritative
+   TYPE/ASCII/MODE table and `cassette/tb_cas_fullfile.sv` for the
+   bit-accurate regression test this bug prompted (measures exact
+   `clk_dragon` cycle counts between every `casdout` edge and
+   reconstructs all 329 bytes of the test file, catching both this bug
+   and, earlier, a bug in the test itself that used `$realtime` deltas
+   instead of exact cycle counts).
 
 ## Joystick support (2026-09-27)
 

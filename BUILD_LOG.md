@@ -724,3 +724,60 @@ it, not by a hardware round-trip. Moved that latch to `clk_dragon`, where
 it belongs and needs no synchronizer at all. Rebuilding - this diagnostic
 run should tell us definitively whether either path now actually
 delivers the file.
+
+## 2026-09-27 — hardware test (dual-path diagnostic) — light green: found root cause
+
+Light green square: `dataslot_update` fired (RED cleared) right after
+selecting `test.cas`, then WHITE (motor not asserted yet), then, after
+`CLOAD`, LIGHT GREEN - confirming the *entire* loading pipeline works:
+file delivery, `cas_len`, the tape motor, and `casdout` toggling.
+`CLOAD` itself even reported finding "TEST" correctly. But `RUN` gave
+`?SN ERROR IN 8272` - nonsense for a 2-line program.
+
+Two independent verifications before touching any more RTL:
+
+1. Built a bit-accurate reference decoder (`cassette/tb_cas_fullfile2.sv`)
+   that measures exact clk_dragon cycle counts between every `casdout`
+   edge (not `$realtime` - an earlier attempt using `$realtime` deltas
+   had its own bug and produced false mismatches) and reconstructs all
+   329 bytes. **All 329 bytes match exactly** - `cas_player.sv` is
+   bit-accurate end to end. Also tried a real commercial cassette game
+   (Jet Set Willy) - `CLOAD` found it too. Two independently-sourced
+   files both successfully syncing rules out the delivery/encoding layer
+   entirely (Jet Set Willy's own `?FM ERROR` on `RUN` is expected -
+   commercial cassette games are almost always machine code, needing
+   `CLOADM` + `EXEC`, not `CLOAD` + `RUN`).
+2. Attempted a full-machine simulation (real CPU/SAM/keyboard bridge,
+   "typing" CLOAD via simulated HID keypresses) to reproduce the exact
+   error - inconclusive, since the simulated typing itself never
+   actually triggered CLOAD (`cas_relay`/tape motor never asserted in
+   550M cycles) - a testbench timing issue, not informative about the
+   real bug. Abandoned rather than debug a harness-only problem.
+
+Root cause found by going to the actual source: downloaded and
+text-extracted "Color BASIC Unravelled" (a real ROM disassembly,
+`techheap.packetizer.com/computers/coco/unravelled_series/`) and found
+CLOAD's own dispatch code. The filename block's byte 10 - documented
+elsewhere (Lomont's hardware reference, used for the original format
+writeup) as a "gap flag" ($00=no gaps) - is actually tested by CLOAD as
+part of a combined ASCII+MODE selector. The disassembly's own
+authoritative table (`LA65C`, "ENTER HERE FOR ASCII FILES": `LDX #$FFFF`
+then `STX 9,U`, setting CASBUF+9 *and* CASBUF+10 together):
+
+| File kind | TYPE (byte 8) | ASCII (byte 9) | MODE (byte 10) |
+|---|---|---|---|
+| BASIC CRUNCHED | 00 | 00 | 00 |
+| **BASIC ASCII** | 00 | FF | **FF** |
+| DATA | 01 | FF | FF |
+| MACHINE LANGUAGE | 02 | 00 | 00 |
+
+`test.cas` had byte 9 = FF (correct) but byte 10 = 00 (following the
+"gap flag" reading) - an invalid combination matching no row. Since
+CLOAD's dispatch branches primarily on byte 10, treating 0 as "crunched/
+tokenized", it took the raw ASCII program text and tried to load it
+directly as pre-tokenized binary program data - exactly the kind of
+corruption that produces a garbage line number like "8272". Regenerated
+`test.cas` with byte 10 = FF (matching the BASIC ASCII row exactly),
+re-verified bit-accuracy against the corrected file (still all 329 bytes
+match). This is a test-file-only fix - no RTL change, no rebuild needed,
+just replacing `test.cas` on the SD card.
