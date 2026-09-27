@@ -784,6 +784,74 @@ synch_3 #(.WIDTH(32)) s_cont2_joy (cont2_joy, cont2_joy_s, clk_dragon);
     wire [7:0] joy2_x = cont2_key_s[3] ? 8'd255 : cont2_key_s[2] ? 8'd0 : cont2_joy_s[7:0];
     wire [7:0] joy2_y = cont2_key_s[1] ? 8'd255 : cont2_key_s[0] ? 8'd0 : cont2_joy_s[15:8];
 
+// TEMPORARY DIAGNOSTIC - cassette load still hangs on CLOAD after the
+// target_dataslot_read fix (see BUILD_LOG.md). Small top-right corner
+// patch, real video everywhere else, so this doesn't have to replace
+// the whole screen the way phase 1's diagnostic did - the "S" hang
+// itself stays visible the whole time this is checked.
+//
+// Sticky "ever happened" latches, checked in priority order (earliest
+// failure wins) - primary/neutral colors only:
+//   RED    - dataslot_update for the Cassette slot (id 1) never arrived
+//            at all - the file-select action itself never reached here
+//   ORANGE - update arrived, but target_dataslot_ack never came back -
+//            the read request itself was never acknowledged
+//   YELLOW - ack came back, but target_dataslot_done never fired - the
+//            transfer was acknowledged but never completed
+//   BLUE   - done fired, but cas_new_file never reached clk_dragon - a
+//            CDC bug in the toggle crossing
+//   WHITE  - cas_new_file fired (cas_len should be set), but motor_on
+//            (cas_relay) never asserts - BASIC never turned the tape
+//            motor on, unrelated to the loading fix itself
+//   BLACK  - motor asserted, but casdout never toggled - a cas_player bug
+//   GREEN  - casdout did toggle - the pipeline is fine, so the remaining
+//            problem is in the file's own content/format, or how CLOAD
+//            interprets it, not in delivery
+    reg dbg_update_seen_74a = 1'b0;
+    reg dbg_ack_seen_74a    = 1'b0;
+    reg dbg_done_seen_74a   = 1'b0;
+always @(posedge clk_74a) begin
+    if (dataslot_update && dataslot_update_id == 16'd1) dbg_update_seen_74a <= 1'b1;
+    if (target_dataslot_ack)  dbg_ack_seen_74a  <= 1'b1;
+    if (target_dataslot_done) dbg_done_seen_74a <= 1'b1;
+end
+
+    wire dbg_update_seen, dbg_ack_seen, dbg_done_seen;
+synch_3 s_dbg_update (dbg_update_seen_74a, dbg_update_seen, clk_dragon);
+synch_3 s_dbg_ack    (dbg_ack_seen_74a,    dbg_ack_seen,    clk_dragon);
+synch_3 s_dbg_done   (dbg_done_seen_74a,   dbg_done_seen,   clk_dragon);
+
+    reg dbg_new_file_seen = 1'b0;
+    reg dbg_motor_seen    = 1'b0;
+    reg dbg_casdout_toggled = 1'b0;
+    reg dbg_casdout_prev  = 1'b0;
+always @(posedge clk_dragon) begin
+    if (cas_new_file) dbg_new_file_seen <= 1'b1;
+    if (dragon_cas_relay) dbg_motor_seen <= 1'b1;
+    dbg_casdout_prev <= dragon_casdout;
+    if (dragon_casdout != dbg_casdout_prev) dbg_casdout_toggled <= 1'b1;
+end
+
+    wire [23:0] cas_diag_color =
+        ~dbg_update_seen   ? 24'hFF0000 : // red
+        ~dbg_ack_seen      ? 24'hFF8000 : // orange
+        ~dbg_done_seen     ? 24'hFFFF00 : // yellow
+        ~dbg_new_file_seen ? 24'h0000FF : // blue
+        ~dbg_motor_seen    ? 24'hFFFFFF : // white
+        ~dbg_casdout_toggled ? 24'h000000 : // black
+                               24'h00FF00;  // green
+
+    wire [8:0] dragon_h_count, dragon_v_count;
+    // dragon_h_count/v_count are RAW mc6847pace counters spanning the
+    // whole raster (front porch/sync/back porch/border/video/border), not
+    // relative to the active video window - H_LEFT_BORDER=148/H_VIDEO=404
+    // and V2_TOP_BORDER=43/V2_VIDEO=235 (mc6847pace.vhd's own constants)
+    // mark where the real 256x192 active area starts/ends. This patch is
+    // the top-right 32x32 corner OF THE ACTIVE AREA: h in [372,403], v in
+    // [43,74].
+    wire cas_diag_patch = (dragon_h_count >= 9'd372) && (dragon_h_count < 9'd404)
+                        && (dragon_v_count >= 9'd43)  && (dragon_v_count < 9'd75);
+
 dragoncoco dragon (
     .clk            ( clk_dragon ),
     .turbo          ( 1'b0 ),
@@ -850,8 +918,8 @@ dragoncoco dragon (
     .sound          (  ),
     .sndout         (  ),
 
-    .v_count        (  ),
-    .h_count        (  ),
+    .v_count        ( dragon_v_count ),
+    .h_count        ( dragon_h_count ),
     .DLine1         (  ),
     .DLine2         (  ),
 
@@ -899,7 +967,7 @@ dragoncoco dragon (
 // higher pixel rates.
 assign video_rgb_clock = dragon_vclk;
 assign video_rgb_clock_90 = dragon_vclk;
-assign video_rgb = {dragon_red, dragon_green, dragon_blue};
+assign video_rgb = cas_diag_patch ? cas_diag_color : {dragon_red, dragon_green, dragon_blue};
 assign video_de = ~(dragon_hblank | dragon_vblank);
 assign video_skip = 1'b0;
 assign video_vs = dragon_vsync;

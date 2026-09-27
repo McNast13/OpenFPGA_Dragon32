@@ -669,3 +669,18 @@ actually lands them. A toggle (not a raw pulse) carries the "data's
 ready" signal across the `clk_74a`/`clk_dragon` boundary, since a
 single-cycle pulse risks being missed entirely by an asynchronous
 receiving clock. Rebuilding to test.
+
+## 2026-09-27 — hardware test (target_dataslot_read fix) — still hangs
+
+Same symptom: `S` stuck top-left after `CLOAD`. The request/ack/done fix
+didn't resolve it (or something else is also wrong) - rather than guess
+again, added a small temporary diagnostic: a 32x32 top-right corner patch
+(real video everywhere else, so the hang itself stays visible) with
+sticky "ever happened" latches checked in priority order -
+`dataslot_update` for the Cassette slot ever arriving (red if not),
+`target_dataslot_ack` ever coming back (orange), `target_dataslot_done`
+ever firing (yellow), `cas_new_file` ever reaching `clk_dragon` (blue),
+`cas_relay`/motor ever asserting (white), `casdout` ever toggling
+(black) - green if all of those happened, meaning the loading pipeline
+itself is fine and the remaining bug is in the file's content/format or
+how CLOAD interprets it, not in delivery. Rebuilding to test.
