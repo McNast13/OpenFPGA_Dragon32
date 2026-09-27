@@ -639,3 +639,17 @@ were added to `core_constraints.sdc`'s async group.
   it's reusable font data or something closer to ROM content. Not used by
   the active `mc6847pace.vhd` path (it uses `sprom`/`mc6847_ntsc.hex`
   instead), so not blocking phase 1.
+
+## Cassette (.cas) loading (2026-09-27)
+
+`dragon/cassette/cas_player.sv` and `cas_ram.sv` are original code written
+for this project. The cassette bit-encoding facts they implement (LSB
+first, '1'=one cycle @2400Hz, '0'=one cycle @1200Hz, positive-to-negative
+zero-crossing detection, and the leader/block/checksum file structure)
+came from Chris Lomont's "Color Computer 1/2/3 Hardware Programming"
+v0.82 (a public hardware reference, found via web search at
+`lomont.org/software/misc/coco/Lomont_CoCoHardware.pdf`) - a factual
+hardware/format specification, not anyone's source code. See
+`cas_player.sv`'s own header for the full writeup, including why the tone
+frequencies are expressed relative to the machine's original 57,272,727Hz
+design frequency rather than `clk_dragon`'s actual (slower) rate.

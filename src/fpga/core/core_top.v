@@ -574,6 +574,86 @@ data_loader #(
     .write_data ( rom_data )
 );
 
+// Cassette (.cas) loading: a second, independent data slot/data_loader
+// pair - see data.json's "Cassette" slot ("address": "0x10000000", so
+// ADDRESS_MASK_UPPER_4 is 4'h1 here, distinct from the boot ROM's 4'h0).
+// Unlike the boot ROM, this slot is optional and user-reloadable at any
+// time (data.json's "parameters": 11 sets that bit) - the platform
+// delivers a freshly-selected file the same way it delivers the boot ROM
+// (plain bridge writes into this slot's address range), just triggered
+// by the user picking a file from the Pocket's menu instead of happening
+// once at boot. See cassette/cas_player.sv's header for the tape format
+// and playback details, and cassette/cas_ram.sv for the buffer itself.
+    wire            cas_wr;
+    wire    [15:0]  cas_wr_addr;
+    wire    [7:0]   cas_wr_data;
+
+data_loader #(
+    .ADDRESS_MASK_UPPER_4 ( 4'h1 ),
+    .ADDRESS_SIZE         ( 16 ),
+    .WRITE_MEM_CLOCK_DELAY( 4 ),
+    .WRITE_MEM_EN_CYCLE_LENGTH( 1 )
+) cas_data_loader (
+    .clk_74a               ( clk_74a ),
+    .clk_memory             ( clk_dragon ),
+
+    .bridge_wr              ( bridge_wr ),
+    .bridge_endian_little   ( bridge_endian_little ),
+    .bridge_addr            ( bridge_addr ),
+    .bridge_wr_data         ( bridge_wr_data ),
+
+    .write_en   ( cas_wr ),
+    .write_addr ( cas_wr_addr ),
+    .write_data ( cas_wr_data )
+);
+
+// dataslot_update fires (with dataslot_update_id matching the Cassette
+// slot's id, 1) once the platform finishes delivering a file into it -
+// dataslot_update_size is that file's real length in bytes, exactly what
+// cas_player.sv needs to know when it's read the last valid byte. Both
+// dataslot_update/_id/_size are already declared above (core_bridge_cmd's
+// own outputs) and synchronous to clk_74a - synchronized into clk_dragon
+// the same way cont3_key etc. are above.
+    wire        dataslot_update_s;
+    wire [15:0] dataslot_update_id_s;
+    wire [31:0] dataslot_update_size_s;
+synch_3 s_dataslot_update (dataslot_update, dataslot_update_s, clk_dragon);
+synch_3 #(.WIDTH(16)) s_dataslot_update_id (dataslot_update_id, dataslot_update_id_s, clk_dragon);
+synch_3 #(.WIDTH(32)) s_dataslot_update_size (dataslot_update_size, dataslot_update_size_s, clk_dragon);
+
+    reg         dataslot_update_prev = 1'b0;
+    wire        cas_new_file = dataslot_update_s && !dataslot_update_prev && (dataslot_update_id_s == 16'd1);
+    reg  [15:0] cas_len = 16'd0;
+always @(posedge clk_dragon) begin
+    dataslot_update_prev <= dataslot_update_s;
+    if (cas_new_file) cas_len <= dataslot_update_size_s[15:0];
+end
+
+    wire [15:0] cas_addr;
+    wire [7:0]  cas_data;
+    wire        dragon_casdout;
+    wire        dragon_cas_relay;
+
+cas_ram #(.ADDR_WIDTH(16)) u_cas_ram (
+    .clk      ( clk_dragon  ),
+    .wr_en    ( cas_wr      ),
+    .wr_addr  ( cas_wr_addr ),
+    .wr_data  ( cas_wr_data ),
+    .rd_addr  ( cas_addr    ),
+    .rd_data  ( cas_data    )
+);
+
+cas_player u_cas_player (
+    .clk       ( clk_dragon       ),
+    .reset     ( ~reset_n_dragon  ),
+    .motor_on  ( dragon_cas_relay ),
+    .new_file  ( cas_new_file     ),
+    .cas_len   ( cas_len          ),
+    .cas_addr  ( cas_addr         ),
+    .cas_data  ( cas_data         ),
+    .casdout   ( dragon_casdout   )
+);
+
 // The Dragon 32 machine itself - ported from MiSTer's CoCo2_MiSTer as-is
 // (see NOTES.md for the full inventory). Phase 1 scope only: get it
 // booting to the BASIC prompt with a real picture. Audio (phase 2) is
@@ -671,9 +751,9 @@ dragoncoco dragon (
     .roms_loaded    (  ),
     .roms_reset     ( ~reset_n_dragon ),
 
-    // tape deferred to phase 3
-    .casdout        ( 1'b0 ),
-    .cas_relay      (  ),
+    // tape (.cas loading) - see cassette/cas_player.sv above
+    .casdout        ( dragon_casdout   ),
+    .cas_relay      ( dragon_cas_relay ),
 
     // audio deferred to phase 2
     .cass_snd       ( 12'b0 ),

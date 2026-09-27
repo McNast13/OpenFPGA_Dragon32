@@ -537,3 +537,55 @@ BASIC). Verified with a 12-case Icarus testbench
 (`usbkbd/tb_dragon_keyboard.sv`) covering single keys, multi-key holds,
 shift suppression, and column-scanning - all pass. Not yet tested on real
 hardware with an actual keyboard - next step once this builds.
+
+## 2026-09-27 — cassette (.cas) loading added, not yet hardware-tested
+
+Added a second, independent data slot/data_loader pair for `.cas` files -
+`data.json`'s new "Cassette" slot (optional, `parameters: 11` for
+user-reloadable-at-any-time, its own bridge address `0x10000000` distinct
+from the boot ROM's `0x00000000`), a `cas_ram` buffer (64KB, plenty for
+any realistic Dragon 32 tape file given the machine only has 32KB RAM to
+begin with), and a new `cas_player` module that streams the loaded bytes
+out as the real bit-serial tape waveform into `dragoncoco.sv`'s `casdout`
+input.
+
+Real Color BASIC cassette encoding (source: Chris Lomont's "Color
+Computer 1/2/3 Hardware Programming" v0.82, a public hardware reference -
+found via web search, not from any vendored/emulator code): each bit is
+one full cycle of a tone, LSB first, '1' = 2400 Hz, '0' = 1200 Hz,
+detected by the real machine on a positive-to-negative zero crossing. A
+`.cas` file already contains the fully-decoded byte stream (leader bytes,
+magic bytes, block headers, checksums, all literally present) - the only
+job here is re-encoding those bytes back into the right square-wave
+cycles, which a plain digital toggle can do directly (no DAC needed,
+since a comparator would square up a real analog signal the same way
+anyway).
+
+The one non-obvious design point: this machine runs `clk_dragon` at 14.85
+MHz, not the ~57.272727 MHz `dragon_pll.v` documents as the "real" 16x-
+NTSC-colorburst target - a deliberate trade for timing closure (see
+phase 1's build history above). Every other clock in the machine (SAM's
+E/Q generation, the CPU's effective instruction rate) is already a fixed
+divide of `clk_dragon`, so the whole machine runs uniformly slower than
+real hardware. Since Color BASIC's tape-reading routine measures bit
+timing by counting its own (now-slower) CPU cycles, the tape waveform
+needs the exact same treatment: expressed as a fixed clk_dragon *cycle
+count* per bit derived from the original 57,272,727 Hz design frequency
+divided by the tone frequency, not literal 1200/2400 Hz relative to
+`clk_dragon`'s actual slower rate (which would make the tape appear to
+run fast relative to what the CPU is measuring it against). Also means
+none of this needs revisiting if `clk_dragon`'s rate ever changes later.
+
+Also handles two real-hardware behaviors deliberately: pausing the
+"motor" (`cas_relay`, the real PIA1 CA2 motor-control line Dragon
+software already toggles around CLOAD) freezes playback position rather
+than resetting it - a real tape deck doesn't rewind when you stop the
+motor - and loading a *different* file (`dataslot_update` firing again
+for this slot) does rewind to the start, like swapping the cassette.
+
+Verified with an 8-case Icarus testbench (`cassette/tb_cas_player.sv`):
+exact half-cycle timing for both tone frequencies (measuring real
+`$realtime` deltas between `casdout` edges), motor pause holding state
+steady, motor resume continuing correctly, end-of-tape silence, and
+multi-byte address advancement - all pass. Not yet tested on real
+hardware with an actual `.cas` file.

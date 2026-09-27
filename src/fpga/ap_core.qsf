@@ -775,6 +775,11 @@ set_global_assignment -name SEARCH_PATH core/dragon/usbkbd
 set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/usbkbd/apf2hid.sv
 set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/usbkbd/dragon_keyboard.sv
 
+# Cassette (.cas) loading - see cassette/cas_player.sv's header comment
+set_global_assignment -name SEARCH_PATH core/dragon/cassette
+set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/cassette/cas_ram.sv
+set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/cassette/cas_player.sv
+
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to bridge_1wire
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to bridge_spiclk
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to bridge_spimiso
