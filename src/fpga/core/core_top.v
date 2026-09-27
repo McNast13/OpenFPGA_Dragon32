@@ -576,12 +576,48 @@ data_loader #(
 
 // The Dragon 32 machine itself - ported from MiSTer's CoCo2_MiSTer as-is
 // (see NOTES.md for the full inventory). Phase 1 scope only: get it
-// booting to the BASIC prompt with a real picture. Input (phase 3) and
-// audio (phase 2) are deliberately still tied off/silent here.
+// booting to the BASIC prompt with a real picture. Audio (phase 2) is
+// still silent here. Keyboard input (phase 3) uses the Pocket's docked
+// USB keyboard, via apf2hid.sv + dragon/usbkbd/dragon_keyboard.sv - see
+// that file's header for the full architecture writeup (why it doesn't
+// use dragoncoco.sv's own ps2_key port).
 
     wire [7:0]  dragon_red, dragon_green, dragon_blue;
     wire        dragon_hblank, dragon_vblank, dragon_hsync, dragon_vsync;
     wire        dragon_vclk;
+
+// cont3_key/cont3_joy/cont3_trig are APF bridge inputs, not natively in
+// clk_dragon's domain (documented "synchronous to clk_74a" at this file's
+// own port list) - synchronized the same way reset_n is above, before
+// apf2hid.sv re-registers them again internally. A torn/mid-transition
+// sample here just self-corrects on the next clk_dragon cycle once the
+// source has settled, since dragon_keyboard.sv re-derives the whole
+// matrix from the live snapshot every cycle rather than tracking discrete
+// press/release events - no persistent state for a torn sample to corrupt.
+    wire [31:0] cont3_key_s;
+    wire [31:0] cont3_joy_s;
+    wire [15:0] cont3_trig_s;
+synch_3 #(.WIDTH(32)) s_cont3_key  (cont3_key,  cont3_key_s,  clk_dragon);
+synch_3 #(.WIDTH(32)) s_cont3_joy  (cont3_joy,  cont3_joy_s,  clk_dragon);
+synch_3 #(.WIDTH(16)) s_cont3_trig (cont3_trig, cont3_trig_s, clk_dragon);
+
+    wire [7:0] hid_mod, hid_sc1, hid_sc2, hid_sc3, hid_sc4, hid_sc5, hid_sc6;
+
+apf2hid u_apf2hid (
+    .clk        ( clk_dragon    ),
+    .reset      ( ~reset_n_dragon ),
+    .cont3_key  ( cont3_key_s   ),
+    .cont3_joy  ( cont3_joy_s   ),
+    .cont3_trig ( cont3_trig_s  ),
+    .usb_kb_hid (               ),
+    .usb_kb_mod ( hid_mod       ),
+    .usb_kb_sc1 ( hid_sc1       ),
+    .usb_kb_sc2 ( hid_sc2       ),
+    .usb_kb_sc3 ( hid_sc3       ),
+    .usb_kb_sc4 ( hid_sc4       ),
+    .usb_kb_sc5 ( hid_sc5       ),
+    .usb_kb_sc6 ( hid_sc6       )
+);
 
 dragoncoco dragon (
     .clk            ( clk_dragon ),
@@ -609,9 +645,16 @@ dragoncoco dragon (
 
     .uart_din       ( 1'b0 ),
 
-    // keyboard input deferred to phase 3 - no key ever pressed for now,
-    // which is fine: the Dragon boots straight to BASIC without one
+    // ps2_key is unused - see dragon_keyboard's instantiation inside
+    // dragoncoco.sv for the real (USB HID) keyboard input path
     .ps2_key        ( 11'b0 ),
+    .hid_mod        ( hid_mod ),
+    .hid_sc1        ( hid_sc1 ),
+    .hid_sc2        ( hid_sc2 ),
+    .hid_sc3        ( hid_sc3 ),
+    .hid_sc4        ( hid_sc4 ),
+    .hid_sc5        ( hid_sc5 ),
+    .hid_sc6        ( hid_sc6 ),
 
     // controller input deferred to phase 3
     .joy1           ( 16'b0 ),

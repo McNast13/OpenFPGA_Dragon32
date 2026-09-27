@@ -766,7 +766,14 @@ set_global_assignment -name VHDL_FILE core/dragon/dpram.vhd
 set_global_assignment -name VHDL_FILE core/dragon/dpram_1r1w.vhd
 set_global_assignment -name VHDL_FILE core/dragon/sprom.vhd
 set_global_assignment -name VHDL_FILE core/dragon/ttl_74LS138.vhd
-set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/keyboard.sv
+
+# USB keyboard bridge (Pocket docked-USB-keyboard controller slot) -
+# replaces the vendored ps2_key-based core/dragon/keyboard.sv entirely,
+# see usbkbd/dragon_keyboard.sv's header comment for why. keyboard.sv is
+# no longer instantiated anywhere and deliberately not registered here.
+set_global_assignment -name SEARCH_PATH core/dragon/usbkbd
+set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/usbkbd/apf2hid.sv
+set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/usbkbd/dragon_keyboard.sv
 
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to bridge_1wire
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to bridge_spiclk

@@ -67,7 +67,7 @@ declared in each file's header comment:
 | `CoCo2.sv`, `wd1793.sv` | GPLv2-or-later | Combined work licensing likely needs to honor GPLv2 for anything derived from these |
 | `pia6520.v`, `fdc.sv`, `Cassette_Write.sv` | BSD-style permissive (redistribution with attribution) | Fine to reuse with attribution kept |
 | `dac.sv` | Copyright notice, no explicit license terms | Ambiguous — ask upstream or treat cautiously if publishing |
-| `keyboard.sv` | Permissive **but explicitly non-commercial only** ("License is granted for non-commercial use only... A fee may not be charged for redistributions") | We don't need this file anyway (replaced by our own Pocket input path), so this doesn't block us — but don't reuse its matrix-mapping logic verbatim if publishing later; re-derive the key matrix from public Dragon 32 documentation instead, to keep the port's licensing clean |
+| ~~`keyboard.sv`~~ | Permissive **but explicitly non-commercial only** | **Removed 2026-09-27** — replaced by `dragon/usbkbd/` (real USB keyboard input, see below). No longer vendored at all, so this license no longer applies to anything in this repo. |
 | `mc6809i.v` | Copyright notice (Greg Miller, 2016), no explicit license terms found | Same ambiguity as `dac.sv` |
 | `CPU09/*.vhd` | "This core adheres to the GNU public license" (OpenCores, John Kent) | GPL |
 | `mc6883.vhd`, `mc6847.vhd`, `mc6847pace.vhd`, `sam.v`, `dragoncoco.sv`, `OVO.vhd`, and others | No license or copyright text at all | Presumably covered by the repo's overall intent (GPL, per `CoCo2.sv`'s header) but not explicitly marked per-file |
@@ -89,6 +89,15 @@ Already-confirmed-clean sources for everything else the port pulls in:
 - `agg23/analogue-pocket-utils` — MIT (Adam Gastineau). Not yet vendored;
   pull in specific modules (data loader, PSRAM controller, I2S audio) when
   phase 1/2 needs them, keeping the MIT header.
+- `dragon/usbkbd/apf2hid.sv` — MIT (OpenGateware/Marcus Andrade, via
+  `OpenFPGA_ZX-Spectrum/src/fpga/core/usbkbd/apf2hid.sv`, itself vendored
+  from `opengateware/computer-msx`). Vendored as-is, header intact.
+  `dragon/usbkbd/dragon_keyboard.sv` (the matrix decoder that consumes its
+  output) is original code written for this project - see its own header
+  comment for exactly which facts (the Dragon 32 matrix layout itself, a
+  hardware property, cross-checked from
+  `https://www.6809.org.uk/dragon/hardware.shtml` and XRoar's key-value
+  encoding scheme) came from where.
 
 **Never vendor:** `CoCo2_MiSTer/releases/` or `CoCo2_MiSTer/roms/` — see the
 inventory table above. Only `rtl/`, `CoCo2.sv` (for reference), and
@@ -621,8 +630,11 @@ needs a real Quartus recompile - watching STA for the same class of
 "missing clock relationship" warning `dp1`'s own clocks hit before they
 were added to `core_constraints.sdc`'s async group.
 
-- Confirm whether APF exposes Pocket dock USB keyboard input to cores
-  (input plan, above) — needed for phase 3, not this gate.
+- ~~Confirm whether APF exposes Pocket dock USB keyboard input to cores~~ -
+  confirmed 2026-09-27: yes, via `cont3_key`/`cont3_joy`/`cont3_trig`, the
+  same mechanism `OpenFPGA_ZX-Spectrum` already uses. See
+  `dragon/usbkbd/README.md`-equivalent header comment in
+  `dragon_keyboard.sv` and `BUILD_LOG.md`.
 - `roms/chrrom` — check what this actually contains before deciding whether
   it's reusable font data or something closer to ROM content. Not used by
   the active `mc6847pace.vhd` path (it uses `sprom`/`mc6847_ntsc.hex`

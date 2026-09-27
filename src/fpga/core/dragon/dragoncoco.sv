@@ -33,8 +33,20 @@ module dragoncoco(
 
   input uart_din,  // not connected yet
 
-  // keyboard
+  // keyboard - ps2_key is no longer used (see the dragon_keyboard
+  // instantiation below); kept in the port list rather than removed, to
+  // avoid touching every existing tie-off in core_top.v for a port that
+  // costs nothing left dangling. hid_mod/hid_sc1-6 are the real input now -
+  // the raw USB HID report bytes apf2hid.sv extracts from the Pocket's
+  // docked-USB-keyboard controller slot.
   input [10:0] ps2_key,
+  input  [7:0] hid_mod,
+  input  [7:0] hid_sc1,
+  input  [7:0] hid_sc2,
+  input  [7:0] hid_sc3,
+  input  [7:0] hid_sc4,
+  input  [7:0] hid_sc5,
+  input  [7:0] hid_sc6,
 
   // joystick input
   // digital for buttons
@@ -685,16 +697,22 @@ mc6847pace vdg(
 // of whether the joystick value is higher or lower than the amount being probed
 // we need to pass it through the keyboard matrix so it flows into here
 wire hilo;
-keyboard kb(
+// USB keyboard bridge (Pocket docked-USB-keyboard controller slot) replaces
+// the vendored MiSTer-style ps2_key-based keyboard module entirely - see
+// usbkbd/dragon_keyboard.sv's header comment for why. ps2_key stays tied
+// off (0) at the top level; nothing drives it any more.
+dragon_keyboard kb(
 .clk_sys(clk),
 .reset(~reset_n),
-.dragon(dragon),
-.ps2_key(ps2_key),
+.hid_mod(hid_mod),
+.hid_sc1(hid_sc1),
+.hid_sc2(hid_sc2),
+.hid_sc3(hid_sc3),
+.hid_sc4(hid_sc4),
+.hid_sc5(hid_sc5),
+.hid_sc6(hid_sc6),
 .addr(kb_cols),
 .kb_rows(kb_rows),
-.kblayout(kblayout),
-.Fn(),
-.modif(),
 .joystick_1_button(joy1[4]),
 .joystick_2_button(joy2[4]),
 .joystick_hilo(hilo)

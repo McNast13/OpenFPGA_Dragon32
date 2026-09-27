@@ -492,3 +492,48 @@ Quartus recompile, unlike the video.json-only fix) - watching STA for
 any new clock-relationship warning on `dragon_vclk`, the same class of
 issue dp1's own clocks hit before they were added to
 `core_constraints.sdc`'s async group.
+
+## 2026-09-27 — hardware test (dragon_vclk fix) — "looks perfect"
+
+**Phase 1 is done.** Real BASIC `OK` prompt, correct green background,
+correctly-sized 32-column text. STA showed zero new timing warnings from
+`dragon_vclk` - Quartus didn't need a clock declaration for it, since
+nothing on-chip is clocked *by* it, it's just a normal registered signal
+routed to an output pin.
+
+Next: phase 3 (input + cassette loading), pulled ahead of phase 2
+(audio/video XRoar parity) at the user's request.
+
+## 2026-09-27 — USB keyboard input added, not yet hardware-tested
+
+Ported the same architecture `OpenFPGA_ZX-Spectrum` already proved out for
+this exact problem (docked USB keyboard -> a computer's real keyboard
+matrix): vendored `apf2hid.sv` (MIT) to extract the raw HID report from
+the Pocket's `cont3_key`/`cont3_joy`/`cont3_trig` controller slot, and
+wrote a new `dragon_keyboard.sv` that re-derives the Dragon 32 matrix
+fresh every `clk_dragon` cycle from that live snapshot - no PS/2
+toggle/strobe convention, no per-key state, same reasoning as the ZX
+Spectrum project's own README for why that shape avoids a whole class of
+stuck/dropped-key bugs.
+
+This **replaces** the vendored `dragon/keyboard.sv` module entirely
+(removed from the repo) rather than extending it - that file's license
+was non-commercial-only, and its ps2_key-toggle-strobe convention is
+exactly the pattern being avoided. The Dragon 32 keyboard matrix table
+itself (a hardware fact, not code) came from two independent public
+sources: 6809.org.uk's PIA0-port-A-is-rows/port-B-is-columns description,
+and XRoar's own key-value encoding scheme (`dkbd.c`/`dkbd.h`, GPLv3) -
+only the factual row/column grid was taken from XRoar, not its code; the
+decode logic in `dragon_keyboard.sv` is original.
+
+v1 scope: A-Z, 0-9, Space, Enter, arrows, Backspace (maps to Left, matching
+real Dragon hardware - no dedicated matrix position), Delete (maps to
+Clear), Escape (maps to Break), Shift, and comma/period/minus/slash/
+semicolon/colon (semicolon key remaps to Dragon's dedicated colon position
+when shifted, without also asserting Dragon Shift, since Dragon has
+separate physical keys for `;` and `:`). No `@` mapping yet (needs Shift+2
+remapping like the semicolon does - deferred, not critical for typing
+BASIC). Verified with a 12-case Icarus testbench
+(`usbkbd/tb_dragon_keyboard.sv`) covering single keys, multi-key holds,
+shift suppression, and column-scanning - all pass. Not yet tested on real
+hardware with an actual keyboard - next step once this builds.
