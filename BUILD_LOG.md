@@ -462,3 +462,33 @@ visible artifacts. Fixed by correcting `video.json` to declare 256x192
 No RTL change needed - core_top.v's `video_de` already tracks the real
 256x192 window correctly since it's a direct passthrough of
 dragoncoco.sv's hblank/vblank. Rebuilding to test.
+
+## 2026-09-27 — hardware test (video.json 256x192) — still oversized
+
+video.json alone wasn't the whole story: text still ~20% of screen width
+per character (roughly 4-5 real characters' worth stretched across the
+full width). Found the real cause: `video_rgb_clock` was wired to
+`clk_dragon` directly - the machine's full, ungated system clock, not
+the VDG's actual per-pixel rate. `dragoncoco.sv` already exposes the
+correct signal on its own `vclk` output port (internally wired to
+`mc6847pace`'s genuine `pixel_clock` output), but core_top.v left it
+unconnected. The real rate is `clk_dragon`/8 (SAM's `Tm` process divides
+by 4 for `VClk`, `mc6847pace`'s own `PROC_CLOCKS` divides by 2 again for
+`cvbs_clk_ena`) - so the scaler was sampling 8x faster than real pixels
+change. With `video.json` now correctly declaring 256 real pixels/line,
+the scaler only captures 256 raw `clk_dragon`-rate samples before
+considering a line "done" - at 8x oversampling that's only ~32 real
+pixels' worth (about 4 real characters), stretched to fill the full
+declared width. Matches the ~20%-per-character report almost exactly
+(256/32 = 8x, ~4-5 characters over the whole width).
+
+Fixed by connecting `dragoncoco`'s `vclk` output through
+(`dragon_vclk`) and driving both `video_rgb_clock` and
+`video_rgb_clock_90` from it instead of `clk_dragon`/`clk_dragon_90deg` -
+no true 90-degree partner exists for a derived/gated clock like this,
+but at ~1.86MHz DDIO output margin isn't a real concern, so reusing the
+same signal for both should be fine. Rebuilding (this one needs a real
+Quartus recompile, unlike the video.json-only fix) - watching STA for
+any new clock-relationship warning on `dragon_vclk`, the same class of
+issue dp1's own clocks hit before they were added to
+`core_constraints.sdc`'s async group.

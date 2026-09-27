@@ -581,6 +581,7 @@ data_loader #(
 
     wire [7:0]  dragon_red, dragon_green, dragon_blue;
     wire        dragon_hblank, dragon_vblank, dragon_hsync, dragon_vsync;
+    wire        dragon_vclk;
 
 dragoncoco dragon (
     .clk            ( clk_dragon ),
@@ -599,7 +600,7 @@ dragoncoco dragon (
     .hsync          ( dragon_hsync ),
     .vsync          ( dragon_vsync ),
 
-    .vclk           (  ),
+    .vclk           ( dragon_vclk ),
     .clk_Q_out      (  ),
 
     .artifact_phase ( 1'b0 ),
@@ -663,22 +664,28 @@ dragoncoco dragon (
 );
 
 // Real video passthrough. dragoncoco.sv runs entirely in the clk_dragon
-// domain (see dragon_pll.v), so the scaler's pixel clock is clk_dragon
-// itself - clk_dragon_90deg is dp1's matching 90-degree-shifted output,
-// mirroring how mf_pllbase below provides the same pair for the (now
-// unused for video) 12.288MHz core clock.
-//
-// Simulation (GHDL + Verilator full-machine testbench, see NOTES.md) has
-// since shown the real dragoncoco/SAM/CPU RTL boots and runs correctly
-// given a properly-sequenced ROM load and reset release - the diagnostic
-// overlay that used to be here (rounds 1-9) sampled fast clk_dragon-domain
-// signals with a synchronizer clocked at clk_core_12288, a nearly-identical
-// frequency, which risked aliasing/undersampling. The "stuck at $FFFE/
-// $FFFF" readings from rounds 6-9 are suspected false negatives from that
-// diagnostic itself, not a real hardware freeze - this build removes the
-// overlay to test that directly.
-assign video_rgb_clock = clk_dragon;
-assign video_rgb_clock_90 = clk_dragon_90deg;
+// domain (see dragon_pll.v), but clk_dragon itself is NOT the right rate
+// to hand the scaler as video_rgb_clock - it's the machine's full,
+// ungated system clock, not the VDG's actual per-pixel rate. That real
+// rate is dragoncoco.sv's own "vclk" output port (wired internally,
+// mc6847pace's genuine pixel_clock output - a clean, registered,
+// glitch-free strobe in the clk_dragon domain, ticking once every 8
+// clk_dragon cycles: VClk = clk_dragon/4 from SAM's Tm process, then
+// mc6847pace's own PROC_CLOCKS divides that by 2 again for cvbs_clk_ena).
+// Driving video_rgb_clock from clk_dragon directly (an earlier version of
+// this file did) made the scaler sample 8x faster than real pixels
+// change - with video.json declaring the real 256x192 pixel count, that
+// mismatch showed up on hardware as severely oversized/stretched text
+// (only a ~32-real-pixel sliver of each real 256-pixel-wide line ever
+// got captured before the scaler considered a line "done"). vclk is the
+// fix: it already IS the correct one-tick-per-real-pixel signal, just
+// previously left unconnected. No true 90-degree-phase partner exists
+// for a derived/gated clock like this, so video_rgb_clock_90 just reuses
+// the same signal - acceptable at this pixel rate (~1.86MHz), where DDIO
+// output timing margin isn't a real concern the way it would be at much
+// higher pixel rates.
+assign video_rgb_clock = dragon_vclk;
+assign video_rgb_clock_90 = dragon_vclk;
 assign video_rgb = {dragon_red, dragon_green, dragon_blue};
 assign video_de = ~(dragon_hblank | dragon_vblank);
 assign video_skip = 1'b0;

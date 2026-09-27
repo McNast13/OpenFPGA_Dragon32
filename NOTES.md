@@ -592,6 +592,35 @@ needed no change). No RTL change needed - `core_top.v`'s `video_de` was
 already a correct direct passthrough of dragoncoco.sv's `hblank`/
 `vblank`.
 
+That fix alone wasn't enough - text was still oversized after it
+(~20% of screen width per character, roughly 4-5 real characters
+stretched across the full width). The deeper bug: `video_rgb_clock` was
+wired straight to `clk_dragon`, the machine's full ungated system clock,
+not the VDG's real per-pixel rate. `dragoncoco.sv` already exposes the
+right signal on its own `vclk` output port - internally wired to
+`mc6847pace`'s genuine `pixel_clock` output - but `core_top.v` left it
+unconnected. The real rate is `clk_dragon`/8: SAM's `Tm` process divides
+by 4 to produce `VClk` (`mc6847pace`'s `clk_ena` input), then
+`mc6847pace`'s own `PROC_CLOCKS` divides by 2 again to produce
+`cvbs_clk_ena` (its actual `pixel_clock` output, and what `h_count`
+itself advances on). Feeding `clk_dragon` directly sampled 8x faster
+than real pixels change; combined with `video.json` now correctly
+declaring 256 real pixels/line, the scaler only captured 256 raw
+`clk_dragon`-rate samples before considering a line done - at 8x
+oversampling that's ~32 real pixels (about 4 characters), stretched to
+fill the declared width. Matches the reported ~20%-per-character almost
+exactly (256/32 = 8x).
+
+Fixed by connecting `vclk` through (`dragon_vclk`) and driving both
+`video_rgb_clock`/`video_rgb_clock_90` from it instead of
+`clk_dragon`/`clk_dragon_90deg`. No true 90-degree-shifted partner exists
+for a derived/gated clock like this; reusing the same signal for both
+should be fine at ~1.86MHz, where DDIO output timing margin isn't a real
+concern. This does touch RTL (unlike the video.json-only fix), so it
+needs a real Quartus recompile - watching STA for the same class of
+"missing clock relationship" warning `dp1`'s own clocks hit before they
+were added to `core_constraints.sdc`'s async group.
+
 - Confirm whether APF exposes Pocket dock USB keyboard input to cores
   (input plan, above) — needed for phase 3, not this gate.
 - `roms/chrrom` — check what this actually contains before deciding whether
