@@ -806,3 +806,43 @@ having reached the end of the file. Green now specifically means
 this should say definitively whether `cas_player`/`cas_ram` themselves
 are stuck, or whether the real machine (CPU/SAM/PIA) is what's not
 progressing despite tape data continuing to arrive correctly.
+
+## 2026-09-27 — hardware test (stall watchdog) — green after 60s, still no visible progress
+
+Green, not cyan - not stalled at a fixed position by the watchdog's
+definition. But the screen still showed no change (still `F TEST`) after
+a genuine 60-second wait. Green as previously defined couldn't
+distinguish "still actively progressing" from "already fully read the
+whole file" - both count as "not stalled". Given a 329-byte file
+shouldn't plausibly need 60+ seconds even accounting for real CPU-side
+overhead per byte, "already finished" became the more likely reading.
+
+Read the actual CLOAD dispatch and block-read routines in "Color BASIC
+Unravelled" to understand what happens after the data block: for a
+BASIC ASCII file, CLOAD sets the device number to tape and jumps into
+`LAC7C` - **BASIC's own normal direct-mode command loop** (the same code
+that runs at the keyboard "OK" prompt). Each "input line" it reads comes
+from tape instead of the keyboard (since DEVNUM is now cassette), gets
+merged into the program because it starts with a line number, and this
+repeats until "get a character" (`LA171`) detects no more data (a
+sticky-per-line-input `CINBFL` flag) and closes the file, returning to
+the keyboard and printing `OK`. The per-block fetch logic (`LA635`)
+checks each block's type: a data block (positive, non-zero) gets its
+length loaded into a character counter; a block with the high bit set
+(matches this project's `0xFF` EOF block type exactly) returns
+immediately via `LA657` (a bare `RTS`) with no new characters - the
+signal the caller uses to detect end-of-input.
+
+Added a further diagnostic distinction: whether `cas_addr` has actually
+reached the last valid position (fully consumed), not just "not
+currently below the stall threshold" - a new magenta color, separate
+from green (still actively progressing, below the end). If it comes back
+magenta, the tape side is provably done and the entire remaining bug is
+in Color BASIC's own end-of-file detection/return-to-prompt sequence,
+not in any of this project's own RTL. Deliberately *not* also changing
+`test.cas` this round (e.g. the second leader between the filename and
+data blocks, which the disassembly doesn't show BASIC explicitly
+expecting a motor-cycle/gap for, contradicting the earlier "gap flag"
+reading of that byte a second time - still a candidate, but changing two
+things in the same test would confound which one mattered). Rebuilding
+to test.

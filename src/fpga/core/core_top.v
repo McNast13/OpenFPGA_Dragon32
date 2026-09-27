@@ -899,8 +899,15 @@ always @(posedge clk_dragon) begin
         cas_stall_watchdog <= cas_stall_watchdog + 1'b1;
     end
 end
-    wire dbg_cas_stalled = dbg_motor_seen && (cas_len != 16'd0)
-                         && (cas_addr < cas_len - 16'd1)
+    // Distinguishes "fully consumed the whole file" from "still working" -
+    // a hardware test came back green (not cyan) after 60+ seconds with no
+    // visible screen change, which the old green branch couldn't tell
+    // apart: it means either one. If cas_addr has actually reached the
+    // last valid position, the tape side is done and the real hang is in
+    // whatever Color BASIC does *after* reading the data (EOF detection,
+    // returning to the "OK" prompt) - not in cas_player/cas_ram at all.
+    wire dbg_cas_at_end = (cas_len != 16'd0) && (cas_addr >= cas_len - 16'd1);
+    wire dbg_cas_stalled = dbg_motor_seen && (cas_len != 16'd0) && !dbg_cas_at_end
                          && (cas_stall_watchdog > 24'd14_850_000); // ~1s @ clk_dragon
 
     wire dbg_arrived = dbg_boot_wr_seen | dbg_update_seen;
@@ -915,7 +922,8 @@ end
         ~dbg_motor_seen    ? 24'hFFFFFF : // white
         ~dbg_casdout_toggled ? 24'h000000 : // black
         dbg_cas_stalled      ? 24'h00FFFF : // cyan: started, then stalled mid-file
-                               24'h00FF00;  // green: still progressing, or finished
+        dbg_cas_at_end       ? 24'hFF00FF : // magenta: fully read the whole file already
+                               24'h00FF00;  // green: still actively progressing, below the end
 
     wire [8:0] dragon_h_count, dragon_v_count;
     // dragon_h_count/v_count are RAW mc6847pace counters spanning the
