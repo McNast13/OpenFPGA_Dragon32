@@ -39,6 +39,20 @@
 // frequency ever changes later (e.g. if timing closure improves) - it
 // scales the same way the rest of the machine already does.
 //
+// End of file: loops back to the start rather than going silent. A real
+// cassette, even on blank/run-out tape, never produces genuine, edge-free
+// silence - there's always some signal to synchronize against, and it's
+// the *software's* job (via block-type/checksum checks, already present
+// in Color BASIC's own CLOAD routine) to recognize unexpected/repeated
+// data and stop cleanly. An idealized, permanently flat signal (this
+// module's original behavior) is not something real tape hardware ever
+// produces, and real hardware tests with two independent files (an ASCII
+// BASIC program and a real commercial machine-code game, each loaded
+// with the command appropriate to its type) both hung identically at
+// "fully delivered, then nothing further" - convergent evidence pointing
+// at this generic end-of-file behavior rather than either file's own
+// content. See BUILD_LOG.md's cassette entries for the full trail.
+//
 `default_nettype none
 
 module cas_player (
@@ -69,7 +83,6 @@ module cas_player (
     localparam [1:0] ST_IDLE      = 2'd0; // no tape, or paused (motor off) - position held
     localparam [1:0] ST_FETCH     = 2'd1; // cas_addr just changed, waiting 1 cycle for cas_data
     localparam [1:0] ST_RUN       = 2'd2; // toggling casdout for the current bit
-    localparam [1:0] ST_DONE      = 2'd3; // ran off the end of the loaded file - stay silent
 
     reg  [1:0]  state;
     reg  [7:0]  shift_reg;
@@ -119,12 +132,11 @@ module cas_player (
                             half_num <= 1'b0;
                             if (bit_idx == 3'd7) begin
                                 bit_idx <= 3'd0;
-                                if (cas_addr + 16'd1 >= cas_len) begin
-                                    state <= ST_DONE;
-                                end else begin
-                                    cas_addr <= cas_addr + 16'd1;
-                                    state    <= ST_FETCH;
-                                end
+                                // End of file: loop back to the start
+                                // rather than going silent - see this
+                                // file's header comment for why.
+                                cas_addr <= (cas_addr + 16'd1 >= cas_len) ? 16'd0 : cas_addr + 16'd1;
+                                state    <= ST_FETCH;
                             end else begin
                                 bit_idx   <= bit_idx + 3'd1;
                                 shift_reg <= shift_reg >> 1;
@@ -134,12 +146,6 @@ module cas_player (
                     end else begin
                         toggle_cnt <= toggle_cnt + 16'd1;
                     end
-                end
-
-                ST_DONE: begin
-                    casdout <= 1'b0;
-                    // Stays here until reset or a fresh load (tape_present
-                    // dropping to 0 and back) sends state back to ST_IDLE.
                 end
 
                 default: state <= ST_IDLE;

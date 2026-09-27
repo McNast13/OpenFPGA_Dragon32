@@ -89,7 +89,9 @@ module tb_cas_player;
         end
 
         // --- Test 3: end of tape (cas_len=1) - after byte 0x01 finishes (8 bits),
-        // casdout should go/stay low and never toggle again ---
+        // cas_addr should wrap back to 0 and playback should keep going (loop),
+        // not go silent - see cas_player.sv's header for why real tape never
+        // produces genuine silence and this module shouldn't either ---
         reset = 1; motor_on = 0; cas_len = 0;
         repeat (3) @(posedge clk);
         reset = 0;
@@ -98,23 +100,27 @@ module tb_cas_player;
         // run long enough to finish all 8 bits of byte 0x01 comfortably:
         // 1 bit@2400Hz (2*11932) + 7 bits@1200Hz (7*2*23864) = ~358,872 cycles
         repeat (380000) @(posedge clk);
-        if (casdout !== 1'b0) begin
-            $display("FAIL end of tape: casdout should be low after running off the end, got %b", casdout);
+        if (cas_addr !== 16'd0) begin
+            $display("FAIL end of tape: cas_addr should have wrapped back to 0, got %0d", cas_addr);
             failures = failures + 1;
         end else begin
-            $display("PASS end of tape: casdout low and idle");
+            $display("PASS end of tape: cas_addr wrapped back to 0");
         end
-        begin : no_more_toggle_check
+        begin : keeps_toggling_check
             reg cd2;
             integer j;
+            reg saw_toggle;
             cd2 = casdout;
-            for (j = 0; j < 200; j = j + 1) begin
+            saw_toggle = 0;
+            for (j = 0; j < 100000; j = j + 1) begin
                 @(posedge clk);
-                if (casdout !== cd2) begin
-                    $display("FAIL end of tape: casdout toggled after running off the end");
-                    failures = failures + 1;
-                    j = 200;
-                end
+                if (casdout !== cd2) saw_toggle = 1;
+            end
+            if (!saw_toggle) begin
+                $display("FAIL end of tape: casdout never toggled again after wrapping - shouldn't go silent");
+                failures = failures + 1;
+            end else begin
+                $display("PASS end of tape: casdout keeps toggling (looping), not silent");
             end
         end
 

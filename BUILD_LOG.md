@@ -886,3 +886,40 @@ worth fixing regardless while already touching this file. Re-verified
 bit-accuracy against the new 202-byte file (down from 329 - no second
 leader) - still exact. No RTL change, no rebuild - just the file on the
 SD card.
+
+## 2026-09-27 — hardware test (leader removal + GO TO fix) — same hang
+
+After a *full core reset* (ruling out contamination from an unrelated
+Jet Set Willy `?FM ERROR` attempt in the same session, which had briefly
+made `test.cas` behave differently - `?IO ERROR` and an empty `LIST`,
+consistent with leftover tape-device state from the earlier failed
+attempt, not a real finding about `test.cas` itself), the original hang
+reproduced exactly: magenta again.
+
+More importantly: also tried Jet Set Willy again, this time with the
+*correct* command for a machine-code file (`CLOADM`, not `CLOAD`) - shows
+its real loading screen, then hangs there too, also magenta. **Two
+completely unrelated files** (a hand-built ASCII BASIC program and a
+real commercial machine-code game, each loaded with the command
+appropriate to its own type) **hang identically**: full tape delivery
+confirmed, then no further progress. That's strong, convergent evidence
+the bug isn't in either file's specific content/format at all - it's in
+something generic to how `cas_player.sv` behaves once a file finishes.
+
+Found a real gap: `cas_player.sv`'s `ST_DONE` state held `casdout`
+permanently, silently low forever once the file finished - genuine,
+edge-free silence. Real cassette tape, even blank/run-out sections,
+never produces that; there's always *some* signal to synchronize
+against, and it's the software's job (via block-type/checksum checks -
+which Color BASIC's own CLOAD routine demonstrably has) to recognize
+unexpected data and stop cleanly. An idealized flat signal may be
+starving the CPU's bit-timing-measurement logic of an edge it's
+implicitly always waiting for, if it never expects that edge to
+structurally never arrive.
+
+Fixed: end of file now loops back to the start and keeps playing,
+rather than going silent. Updated `tb_cas_player.sv`'s "end of tape"
+test to match (was explicitly asserting silence - now asserts the
+opposite: `cas_addr` wraps to 0 and `casdout` keeps toggling). This is a
+real RTL change, not a test-file tweak - needs a rebuild and a fresh
+hardware test on both files.

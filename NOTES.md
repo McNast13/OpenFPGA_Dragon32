@@ -700,8 +700,21 @@ own CLOAD dispatch shows no gap/motor-cycle instruction there - it was
 based on the same "gap flag" misreading applied to sequencing, not just
 the mode byte) and fixed an independent, unrelated bug noticed along
 the way: `GOTO` isn't one word to the tokenizer (`GO` is the real
-token, followed by literal " TO") - `test.cas` now uses `GO TO`. Neither
-change has been hardware-tested yet as of this note.
+token, followed by literal " TO") - `test.cas` now uses `GO TO`.
+
+Neither of those changes actually fixed the hang, but testing them
+produced the decisive clue: two completely unrelated files (the
+hand-built ASCII program and, separately, a real commercial machine-code
+game loaded via `CLOADM`) hang identically - full delivery, then no
+further progress. That ruled out either file's own content/format as
+the cause and pointed at something generic in `cas_player.sv` itself:
+its end-of-file behavior held `casdout` permanently, silently low
+forever, which real tape hardware never actually does (there's always
+*some* signal for the reading software to synchronize against, even on
+blank tape). Fixed by looping back to the start and continuing playback
+instead of going silent - see `cas_player.sv`'s own header comment for
+the full reasoning. This one is a real RTL change, unlike the two
+before it.
 
 ## Joystick support (2026-09-27)
 
