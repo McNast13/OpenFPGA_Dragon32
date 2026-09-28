@@ -994,3 +994,87 @@ match exactly. No RTL change, no rebuild - just the file on the SD
 card, under real time pressure (a 2-hour session limit on the user's
 end), so shipped without waiting for the full re-verification to
 finish first.
+
+## 2026-09-27 — hardware test (200 EOF blocks) — CLOAD actually finishes
+
+Real breakthrough: `CLOAD` with the 200-EOF-block `test.cas` **finishes**
+- no hang, no `?IO ERROR`. The retry-count theory was right; 10 wasn't
+enough margin, 200 was. Diagnostic shows cyan (motor on, then stalled)
+rather than green - almost certainly a harmless diagnostic artifact,
+not a real problem: real Dragon software turns the tape motor off once
+loading completes (matching authentic hardware behavior), and the
+stall-watchdog can't currently distinguish "motor off because we're
+done" from "motor still on but genuinely stuck". Not investigated
+further this session.
+
+`RUN` produced no visible output. **Not yet determined** whether the
+program actually landed in memory (`LIST` was the next diagnostic step,
+not yet run) or loaded but has some other problem. Session paused here
+at the user's request to prioritize a separate, more urgent issue - see
+next entry. Resume by checking `LIST` on a fresh `CLOAD` of the current
+`test.cas`.
+
+## 2026-09-28 — undocked video: random static, no pattern (new priority)
+
+User asked to pause cassette work (see above - resume point unchanged)
+to prioritize two new items: an on-screen keyboard for undocked use,
+and a report that undocked video "just displays a multicoloured
+garbled mess". Asked a clarifying question about what the garbage
+looks like - user answered "Random static/noise, no pattern".
+
+That answer is consistent with the scaler's receiver never achieving
+sync lock at all (as opposed to locking onto a wrong/unstable timing,
+which would look more like tearing or a stable-but-wrong image).
+Leading theory: this core's real frame rate is very low (~15 FPS,
+derived from mc6847pace.vhd's own H_TOTAL_PER_LINE=463 x
+V2_TOTAL_PER_FIELD=262 vclk-tick raster timing), and video_rgb_clock
+was being driven directly from that real, slow per-pixel rate
+(dragon_vclk). The Pocket's built-in LCD only supports 30-62Hz
+(Analogue's published specs) - docked (HDMI) is presumably more
+tolerant, matching why this worked fine docked ("looks perfect!" in
+phase 1) but not undocked. A sibling project
+(`OpenFPGA_ZX-Spectrum`) driving video_rgb_clock from an equally
+derived/gated clock, not a raw PLL output, and presumably working
+undocked too, ruled out "derived clock" per se as the problem - it's
+specifically the *rate* being too low.
+
+**Fix**: added `src/fpga/core/dragon/video_frame_buffer.sv`, a small
+frame buffer (49152 x 24-bit words, one screen) that decouples the
+scaler's output timing from the machine's own real pixel rate. Real
+Dragon pixels are written in at their native (slow) rate on the
+`clk_dragon`/`dragon_vclk` side; a separate, fixed, clean ~45.7Hz
+scan-out (320x210 total, 256x192 active, derived from `clk_core_12288`
+- already present in `core_top.v` for other purposes, previously
+unused for video - by /4 clean-toggle dividers) continuously re-reads
+the same buffer out to the scaler. The image still only *updates* ~15
+times a second (unchanged - the machine itself isn't any faster), but
+the scaler always sees a normal, lockable refresh rate now. Uses the
+same `dpram_1r1w` true dual-clock dual-port RAM primitive already used
+throughout `dragoncoco.sv` for ROMs.
+
+The cassette diagnostic corner-patch overlay (`cas_diag_patch`/
+`cas_diag_color`, still present/unresolved from the paused cassette
+work) now applies on the *write* side (an `wr_overlay_en`/
+`wr_overlay_color` input to `video_frame_buffer`) rather than directly
+on `video_rgb`, so it's unaffected by this change and still uses its
+original, already-hardware-validated `dragon_h_count`/`dragon_v_count`
+coordinate math.
+
+Verified in simulation (iverilog, `/tmp/tb_vfb.sv` - not part of the
+repo, ad hoc) before shipping to hardware: all 49,152 write-side
+pixels land at the correct address with correct data; the read-side
+timing generator produces exactly 320*210=67,200 dot_clk cycles
+between vsync pulses as designed; and a full active-line readback
+through the real `rd_rgb`/`rd_de` output pipeline (not just raw RAM
+contents) confirms the one-cycle RAM read latency is correctly
+accounted for, with no off-by-one shift. Found and fixed one real gap
+in the process: the read-side counters (`h_cnt`, `v_cnt`, `dot_div`,
+`dot_div_90`, and the de/hsync/vsync pipeline registers) had no
+explicit power-up value, which is harmless on real Cyclone V hardware
+(Quartus honors an RTL `initial value` as the register's power-up
+state) but left them permanently unknown (X) in simulation with no way
+to ever recover, since there's no reset input on this module - added
+explicit `= 0` initial values to all of them.
+
+Not yet tested on real hardware - this is the next thing to check
+(undocked, on the actual Pocket).

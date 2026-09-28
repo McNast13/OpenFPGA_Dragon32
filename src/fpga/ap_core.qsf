@@ -767,6 +767,10 @@ set_global_assignment -name VHDL_FILE core/dragon/dpram_1r1w.vhd
 set_global_assignment -name VHDL_FILE core/dragon/sprom.vhd
 set_global_assignment -name VHDL_FILE core/dragon/ttl_74LS138.vhd
 
+# Frame buffer + fixed-rate scan-out (undocked/built-in-screen video fix)
+# - see video_frame_buffer.sv's header comment
+set_global_assignment -name SYSTEMVERILOG_FILE core/dragon/video_frame_buffer.sv
+
 # USB keyboard bridge (Pocket docked-USB-keyboard controller slot) -
 # replaces the vendored ps2_key-based core/dragon/keyboard.sv entirely,
 # see usbkbd/dragon_keyboard.sv's header comment for why. keyboard.sv is

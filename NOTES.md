@@ -743,3 +743,59 @@ unconfirmed assumption: that the Pocket's analog stick reports increasing
 value = rightward/downward, matching the polarity `dragoncoco.sv`'s own
 `joy_use_dpad` branch already uses. Needs a hardware test to confirm;
 a one-line fix if either axis comes out inverted.
+
+## Undocked video: frame buffer + fixed-rate scan-out (2026-09-28)
+
+Docked video worked ("looks perfect!") with `video_rgb_clock` driven
+directly from `dragon_vclk`, the real VDG pixel strobe (~1.86MHz,
+giving an actual frame rate around 15 FPS - `mc6847pace.vhd`'s
+H_TOTAL_PER_LINE=463 x V2_TOTAL_PER_FIELD=262 vclk ticks/frame).
+Undocked (the Pocket's own built-in LCD, 30-62Hz per Analogue's
+published specs) showed random static/no pattern - the scaler's
+receiver never achieving sync lock, consistent with a real frame rate
+roughly half the documented minimum. The sibling `OpenFPGA_ZX-Spectrum`
+project also drives its scaler from a derived/gated clock (`pix_clk`,
+not a raw PLL output) and is presumably fine undocked - so a *derived*
+clock isn't the problem; too low a *rate* is.
+
+Fix: `src/fpga/core/dragon/video_frame_buffer.sv` sits between
+`dragoncoco`'s real video output and the scaler. It's a small frame
+buffer (one screen, 256x192 x 24-bit RGB = 49,152 words, using the
+same `dpram_1r1w` true dual-clock dual-port RAM primitive
+`dragoncoco.sv` already uses for its ROMs) with two independent sides:
+
+- **Write side** (`clk_dragon`/`dragon_vclk` domain): captures each
+  real pixel at its native, slow rate. Position is tracked from
+  `hblank`/`vblank`/`vsync` directly (the same signals already proven
+  correct via the docked video path), not from `mc6847pace`'s raw
+  internal raster counters, so it needs no knowledge of that module's
+  timing constants.
+- **Read side** (a new, clean, fixed-rate `dot_clk` domain, derived by
+  dividing `clk_core_12288` - already present in `core_top.v` for other
+  purposes, previously unused for video - by 4): continuously re-scans
+  the buffer out to the scaler at a standard, lockable rate. Chosen
+  totals: 320x210 (256x192 active), giving dot_clk/(320*210) =
+  3.072MHz/67200 ≈ 45.7Hz - comfortably mid-range of the Pocket's
+  30-62Hz built-in-screen window.
+
+The displayed image still only *updates* about 15 times a second
+(unchanged - the underlying machine isn't any faster), but the scaler
+now always sees a normal ~46Hz refresh rate to lock onto, whether
+docked or not.
+
+One subtlety worth remembering if this module is touched again: the
+`dpram_1r1w` read side has one cycle of latency (`address_reg_b`=
+CLOCK1, `outdata_reg_b`=UNREGISTERED - address is registered on the
+read clock, and `q` is combinational off that registered address), so
+the read-side `de`/`hsync`/`vsync` signals are pipelined by exactly one
+`dot_clk` cycle to stay aligned with the pixel data they describe.
+Verified in simulation before shipping (all 49,152 write-side pixels
+land at the correct address; exactly 320*210=67,200 dot_clk cycles
+between vsync pulses; and a full active-line readback through the real
+output pipeline confirms no off-by-one shift) - see
+`BUILD_LOG.md`'s 2026-09-28 entry for the full write-up, including one
+real bug the simulation caught (the read-side counters had no explicit
+power-up value, harmless on real hardware but left them permanently
+unknown in simulation with no reset to recover from).
+
+Not yet tested on real hardware.

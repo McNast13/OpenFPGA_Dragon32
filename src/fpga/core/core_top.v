@@ -1028,34 +1028,53 @@ dragoncoco dragon (
     .CASS_REWIND_RECORD( 1'b0 )
 );
 
-// Real video passthrough. dragoncoco.sv runs entirely in the clk_dragon
-// domain (see dragon_pll.v), but clk_dragon itself is NOT the right rate
-// to hand the scaler as video_rgb_clock - it's the machine's full,
-// ungated system clock, not the VDG's actual per-pixel rate. That real
-// rate is dragoncoco.sv's own "vclk" output port (wired internally,
-// mc6847pace's genuine pixel_clock output - a clean, registered,
-// glitch-free strobe in the clk_dragon domain, ticking once every 8
-// clk_dragon cycles: VClk = clk_dragon/4 from SAM's Tm process, then
-// mc6847pace's own PROC_CLOCKS divides that by 2 again for cvbs_clk_ena).
-// Driving video_rgb_clock from clk_dragon directly (an earlier version of
-// this file did) made the scaler sample 8x faster than real pixels
-// change - with video.json declaring the real 256x192 pixel count, that
-// mismatch showed up on hardware as severely oversized/stretched text
-// (only a ~32-real-pixel sliver of each real 256-pixel-wide line ever
-// got captured before the scaler considered a line "done"). vclk is the
-// fix: it already IS the correct one-tick-per-real-pixel signal, just
-// previously left unconnected. No true 90-degree-phase partner exists
-// for a derived/gated clock like this, so video_rgb_clock_90 just reuses
-// the same signal - acceptable at this pixel rate (~1.86MHz), where DDIO
-// output timing margin isn't a real concern the way it would be at much
-// higher pixel rates.
-assign video_rgb_clock = dragon_vclk;
-assign video_rgb_clock_90 = dragon_vclk;
-assign video_rgb = cas_diag_patch ? cas_diag_color : {dragon_red, dragon_green, dragon_blue};
-assign video_de = ~(dragon_hblank | dragon_vblank);
+// Real video, via a frame buffer that decouples the scaler's output
+// timing from the Dragon's own real, very slow pixel rate (~1.86MHz
+// vclk, ~15 FPS - see video_frame_buffer.sv's header). Driving
+// video_rgb_clock from clk_dragon directly (an earlier version of this
+// file did) made the scaler sample 8x faster than real pixels change,
+// showing up as severely oversized/stretched text. Driving it straight
+// from dragon_vclk (a later version did) fixed that, and worked fine
+// docked - but undocked, the Pocket's built-in screen (30-62Hz minimum,
+// per Analogue's published specs) showed random static/no pattern, since
+// the real ~15Hz frame rate is below what its scaler can achieve sync
+// lock on at all. video_frame_buffer.sv captures each real pixel at its
+// native rate and re-scans it out at a clean, fixed ~46Hz instead - see
+// that file for the full writeup.
+wire        video_dot_clk, video_dot_clk_90;
+wire [23:0] video_fb_rgb;
+wire        video_fb_de, video_fb_hsync, video_fb_vsync;
+
+video_frame_buffer vid_fb (
+    .wr_clk         ( clk_dragon ),
+    .wr_pixel_en    ( dragon_vclk ),
+    .wr_red         ( dragon_red ),
+    .wr_green       ( dragon_green ),
+    .wr_blue        ( dragon_blue ),
+    .wr_hblank      ( dragon_hblank ),
+    .wr_vblank      ( dragon_vblank ),
+    .wr_vsync       ( dragon_vsync ),
+
+    .wr_overlay_en    ( cas_diag_patch ),
+    .wr_overlay_color ( cas_diag_color ),
+
+    .rd_ref_clk     ( clk_core_12288 ),
+    .rd_ref_clk_90  ( clk_core_12288_90deg ),
+    .dot_clk        ( video_dot_clk ),
+    .dot_clk_90     ( video_dot_clk_90 ),
+    .rd_rgb         ( video_fb_rgb ),
+    .rd_de          ( video_fb_de ),
+    .rd_hsync       ( video_fb_hsync ),
+    .rd_vsync       ( video_fb_vsync )
+);
+
+assign video_rgb_clock = video_dot_clk;
+assign video_rgb_clock_90 = video_dot_clk_90;
+assign video_rgb = video_fb_rgb;
+assign video_de = video_fb_de;
 assign video_skip = 1'b0;
-assign video_vs = dragon_vsync;
-assign video_hs = dragon_hsync;
+assign video_vs = video_fb_vsync;
+assign video_hs = video_fb_hsync;
 
 
 
