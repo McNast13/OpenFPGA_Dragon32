@@ -1162,3 +1162,51 @@ line-by-line tokenizing path specifically (distinct from `CLOADM`'s raw
 block loader, which JSW's testing shows gets further) - or the core's
 PIA/`casdout` wiring into the CPU side (`dragoncoco.sv`) rather than the
 tape-playback engine itself.
+
+## 2026-09-29 — decisive test: hand-typed BASIC program works fine
+
+At the user's request, typed a trivial `PRINT` program directly at the
+keyboard (no cassette involved at all) and ran it - worked correctly.
+This rules out "BASIC program storage/editing is broken in general" on
+this core - the machine can create, keep, and run a program just fine.
+Combined with the RAM-latency investigation above (tape delivery
+independently proven bit-accurate) and JSW's `CLOADM` getting as far as
+its own loading screen, the bug is now narrowed specifically to ASCII
+`CLOAD`'s own mechanism of re-feeding tape bytes through the line-input/
+tokenizer as if typed - not the file, not general storage, not raw byte
+delivery.
+
+Built `test_crunched.cas` (`generate_test_crunched_cas.py`) to test this
+directly: the same trivial program, pre-tokenized ("crunched") instead
+of ASCII source, so it loads via the TYPE=00/ASCII=00/MODE=00 path -
+which, per the disassembly-sourced note in `generate_test_cas.py`,
+shares its low-level block-fetch with `CLOADM`'s raw loader (the path
+already confirmed to make real progress). If this loads correctly where
+the ASCII file doesn't, that confirms the bug is confined to ASCII
+CLOAD's re-tokenizing mechanism specifically.
+
+Sourced the tokenized-program format from public references
+(subethasoftware.com's Color BASIC memory-format writeup, corroborated
+by MSX-wiki/GW-BASIC's tokenized-format pages describing the same
+Microsoft BASIC-derived scheme) and confirmed `PRINT`=`$87`/`GO`=`$81`
+against `archive.worldofdragon.org`'s token table (consistent with this
+project's existing dragon32.info-sourced token facts). Verified
+bit-accurate playback through the real (post-fix) `cas_ram` timing model
+before shipping to hardware - `ALL 1392 BYTES MATCH`.
+
+**Flagged, unresolved risk**: the crunched format bakes in absolute
+"next line" memory addresses (crunched CLOAD copies bytes directly into
+place with no relocation), which requires knowing the real runtime
+BASIC program-start address (TXTTAB) in advance. Used `$1E00`, per
+dragon32.info's memory map explicitly describing the *Dragon's* (not
+just generic CoCo's) post-boot free memory start - but generic CoCo
+references for machines with Extended BASIC instead cite `$1E01`, a
+1-byte discrepancy no available documentation resolves. If
+`test_crunched.cas` fails to load with a plausible-looking address
+error, the fix is cheap: type `PRINT PEEK(25)*256+PEEK(26)` after a
+fresh `NEW` to read the real value directly from this core's own running
+ROM, then regenerate with `TXTTAB` set to match.
+
+Added `test_crunched.cas` to the SD card at
+`Assets/dragon32/common/test_crunched.cas` (MD5-verified) alongside the
+existing `test.cas`. Not yet tested on hardware.
