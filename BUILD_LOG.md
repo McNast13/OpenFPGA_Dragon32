@@ -1078,3 +1078,87 @@ explicit `= 0` initial values to all of them.
 
 Not yet tested on real hardware - this is the next thing to check
 (undocked, on the actual Pocket).
+
+## 2026-09-29 — new SD card, video fix confirmed working undocked
+
+User's old SD card had failed outright (undetected by both the Pocket
+and a computer card reader - a genuine hardware failure, unrelated to
+any core file). New card ("analogue") in use from this session on.
+Installed the current `main` build (commit `7d3fa57`, the frame-buffer
+video fix above) by downloading the matching GitHub Actions artifact
+(`Dragon32-pocket-core`, run `36398117424`) rather than building
+locally (Quartus only runs via the Docker/CI path on this machine) and
+copying `Cores/McNast13.Dragon32/`, `Platforms/dragon32.json` +
+`_images/dragon32.bin`, and `Assets/dragon32/McNast13.Dragon32/` onto
+the card, byte-verified against the downloaded artifact (MD5 match on
+`bitstream.rbf_r`).
+
+**Undocked video fix confirmed working on real hardware.** The frame
+buffer resolves the "random static/no pattern" symptom - no further
+action needed here unless a regression shows up.
+
+`test.cas` wasn't on the new card yet (cassette testing was paused
+before the card failure, so it was never carried over). Added it to
+`Assets/dragon32/common/test.cas` (the standard openFPGA browse path
+for a core's optional/no-fixed-filename data slots - matches the
+convention seen in other installed cores' `Assets/<platform>/common/`
+folders), copying the current repo copy (1396 bytes, 200 trailing EOF
+blocks) byte-verified by MD5. Resume point unchanged from the
+2026-09-27 entry: fresh `CLOAD` of `test.cas`, then `LIST` (not `RUN`)
+to check whether the program landed in memory correctly.
+
+## 2026-09-29 — hardware test (200 EOF blocks, new card) — CLOAD/RUN both OK, LIST empty
+
+Fresh `CLOAD` of `test.cas`: `OK`. `RUN`: `OK`, no visible output.
+`LIST`: `OK`, no program listed. Real finding, not just "still
+untested": `CLOAD` reports success with **no error at all**, yet the
+program never lands in memory - ruling out a hang or a detected bad
+checksum, and pointing at something in the ASCII-mode `CLOAD` path that
+silently fails to store the tokenized program despite believing (or not
+checking) that it succeeded.
+
+Investigated a real, independent bug before chasing that further:
+`cas_player.sv`'s `ST_FETCH` state samples `cas_data` one cycle too
+early relative to `cas_ram.sv`'s actual registered-read latency
+(`rd_data <= mem[rd_addr]` - a genuine 1-cycle synchronous read), a
+mismatch neither `tb_cas_player.sv` nor `tb_cas_fullfile.sv` could catch
+because both used an idealized, zero-latency combinational stand-in
+(`wire cas_data = mem[cas_addr]`) instead of the real `cas_ram` module.
+
+Traced the actual effect by hand, got it wrong once (concluded
+"corrupting" on first pass), then verified properly by simulating
+`test.cas` through the *real* `cas_ram.sv` (ad hoc testbench, not part
+of the repo). The bug is a clean one-slot delay, not corruption: byte 0
+plays twice, every real byte after that plays exactly once in the
+correct order, and only the file's absolute last byte (buried in 200x
+redundant EOF padding) is dropped. Since byte 0 of a `.cas` file is
+always a leader byte (`0x55`, ~128 of them in a row), duplicating it is
+indistinguishable from "one extra leader byte" - completely harmless.
+Direct evidence: the simulated decode of the real data block, byte for
+byte, produced `10 PRINT "HELLO FROM CLAUDE"` / `20 GO TO 10` exactly,
+correctly ordered, checksum intact. **This bug is ruled out as the
+cause of the empty `LIST`** - consistent with Jet Set Willy's `CLOADM`
+separately getting as far as its own loading screen, which wouldn't
+happen if this bug broadly corrupted post-leader content.
+
+Fixed anyway since it's a real RTL/documentation mismatch worth having
+correct regardless: added an `ST_FETCH2` state so `cas_player.sv` waits
+the full cycle `cas_ram.sv` actually needs before capturing `cas_data`,
+instead of one cycle short. Updated both `tb_cas_player.sv` and
+`tb_cas_fullfile.sv` to instantiate the real `cas_ram` module rather
+than their idealized lookups, so this class of bug can't hide from
+either test again. Re-verified: `tb_cas_player.sv` passes (one
+hardcoded startup-fill cycle-count constant needed bumping - measured
+empirically off the fixed sim, not re-derived by hand, given the
+hand-derivation mistake earlier in this entry); `tb_cas_fullfile.sv`
+reports `ALL 1396 BYTES MATCH - cas_player is bit-accurate` against the
+real RAM timing.
+
+**Still unresolved**: why ASCII `CLOAD` reports `OK` without ever
+storing the program. Since the cassette bit-delivery pipeline itself is
+now confirmed correct (both by this fix and by the pre-fix content
+tracing above), the next place to look is Color BASIC's ASCII-mode
+line-by-line tokenizing path specifically (distinct from `CLOADM`'s raw
+block loader, which JSW's testing shows gets further) - or the core's
+PIA/`casdout` wiring into the CPU side (`dragoncoco.sv`) rather than the
+tape-playback engine itself.

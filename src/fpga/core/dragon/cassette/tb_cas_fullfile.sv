@@ -24,11 +24,24 @@ module tb_cas_fullfile;
     reg new_file = 0;
     reg [15:0] cas_len = 0;
     wire [15:0] cas_addr;
-    reg  [7:0]  mem [0:4095];
-    wire [7:0]  cas_data = mem[cas_addr];
+    wire [7:0]  cas_data;
     wire        casdout;
 
+    // Real cas_ram, not an idealized combinational lookup - see
+    // BUILD_LOG.md's 2026-09-29 "cassette: RAM-latency bug" entry for why
+    // this matters (an idealized zero-latency stand-in here previously hid
+    // a real cas_player.sv off-by-one that only showed up against the true
+    // dpram-style registered-read timing).
+    cas_ram #(.ADDR_WIDTH(16)) ram (
+        .clk(clk), .wr_en(1'b0), .wr_addr(16'd0), .wr_data(8'd0),
+        .rd_addr(cas_addr), .rd_data(cas_data)
+    );
+    // Kept as a separate array (not just ram.mem) so the checker below can
+    // compare decoded bytes against known-good expected values independent
+    // of whatever's actually in the RAM under test.
+    reg  [7:0]  mem [0:4095];
     initial $readmemh("testdata/test_cas_bytes.hex", mem);
+    initial $readmemh("testdata/test_cas_bytes.hex", ram.mem);
 
     cas_player dut (
         .clk(clk), .reset(reset), .motor_on(motor_on), .new_file(new_file),

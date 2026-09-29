@@ -6,9 +6,18 @@ module tb_cas_player;
     reg motor_on = 0;
     reg [15:0] cas_len = 0;
     wire [15:0] cas_addr;
-    reg  [7:0]  mem [0:15];
-    wire [7:0]  cas_data = mem[cas_addr[3:0]];
+    wire [7:0]  cas_data;
     wire        casdout;
+
+    // Real cas_ram, not an idealized combinational lookup - cas_player.sv's
+    // fetch pipeline is timed against this module's actual registered-read
+    // latency (see BUILD_LOG.md's 2026-09-29 "cassette: RAM-latency bug"
+    // entry - an idealized zero-latency stand-in here previously hid a real
+    // off-by-one that only showed up against the true dpram-style timing).
+    cas_ram #(.ADDR_WIDTH(16)) ram (
+        .clk(clk), .wr_en(1'b0), .wr_addr(16'd0), .wr_data(8'd0),
+        .rd_addr(cas_addr), .rd_data(cas_data)
+    );
 
     cas_player dut (
         .clk(clk), .reset(reset), .motor_on(motor_on),
@@ -38,8 +47,8 @@ module tb_cas_player;
     endtask
 
     initial begin
-        mem[0] = 8'h01; // bit0=1 (2400Hz), bits1-7=0 (1200Hz each)
-        mem[1] = 8'h02; // bit0=0 (1200Hz), bit1=1 (2400Hz), bits2-7=0
+        ram.mem[0] = 8'h01; // bit0=1 (2400Hz), bits1-7=0 (1200Hz each)
+        ram.mem[1] = 8'h02; // bit0=0 (1200Hz), bit1=1 (2400Hz), bits2-7=0
 
         reset = 1; motor_on = 0; cas_len = 0;
         repeat (3) @(posedge clk);
@@ -50,7 +59,14 @@ module tb_cas_player;
         cas_len = 16'd1;
         motor_on = 1;
         t_prev = $realtime;
-        expect_delta("byte 0x01 bit0='1' first half-cycle (incl. startup fill)", 11934.0);
+        // Startup fill is a few cycles longer than the bare half-period now
+        // that cas_data comes from a real registered-read cas_ram (plus
+        // cas_player's own ST_FETCH/ST_FETCH2 wait states) rather than an
+        // idealized zero-latency lookup - measured empirically, not derived
+        // by hand (see BUILD_LOG.md's 2026-09-29 "cassette: RAM-latency
+        // bug" entry for why trusting hand-derived cycle counts here is
+        // risky).
+        expect_delta("byte 0x01 bit0='1' first half-cycle (incl. startup fill)", 11936.0);
         expect_delta("byte 0x01 bit0='1' second half-cycle", 11932.0);
         // bit1 (still byte 0x01, value 0) -> HALF_PERIOD_BIT0 (23864)
         expect_delta("byte 0x01 bit1='0' first half-cycle", 23864.0);

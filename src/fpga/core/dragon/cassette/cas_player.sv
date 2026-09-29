@@ -81,7 +81,8 @@ module cas_player (
     localparam [15:0] HALF_PERIOD_BIT0 = 16'd23864; // 1200 Hz
 
     localparam [1:0] ST_IDLE      = 2'd0; // no tape, or paused (motor off) - position held
-    localparam [1:0] ST_FETCH     = 2'd1; // cas_addr just changed, waiting 1 cycle for cas_data
+    localparam [1:0] ST_FETCH     = 2'd1; // cas_addr just changed - wait 1 cycle for cas_ram to see it
+    localparam [1:0] ST_FETCH2    = 2'd3; // cas_data is now valid (cas_ram's own 1-cycle read latency) - capture it
     localparam [1:0] ST_RUN       = 2'd2; // toggling casdout for the current bit
 
     reg  [1:0]  state;
@@ -113,6 +114,15 @@ module cas_player (
                 end
 
                 ST_FETCH: begin
+                    // Just a wait cycle: cas_addr changed on the same edge
+                    // that brought us here, and cas_ram (a real registered-
+                    // output synchronous RAM, cas_ram.sv) doesn't reflect
+                    // that new address in cas_data until one more cycle
+                    // after this - see ST_FETCH2.
+                    state <= ST_FETCH2;
+                end
+
+                ST_FETCH2: begin
                     shift_reg   <= cas_data;
                     half_period <= cas_data[0] ? HALF_PERIOD_BIT1 : HALF_PERIOD_BIT0;
                     toggle_cnt  <= 16'd0;
