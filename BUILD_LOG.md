@@ -1210,3 +1210,61 @@ ROM, then regenerate with `TXTTAB` set to match.
 Added `test_crunched.cas` to the SD card at
 `Assets/dragon32/common/test_crunched.cas` (MD5-verified) alongside the
 existing `test.cas`. Not yet tested on hardware.
+
+## 2026-09-29 — hardware test (test_crunched.cas, first attempt) - same symptom, plus a real keyboard gap found
+
+`CLOADM` on `test_crunched.cas` correctly returned `?FM ERROR` - good
+sign, confirms the ROM's TYPE-byte checking works on this core (it's a
+TYPE=00 BASIC file, not TYPE=02 machine language, and `CLOADM` correctly
+refuses it). Plain `CLOAD` then `LIST`: `OK`, then nothing listed -
+*same* symptom as the ASCII file. Checked the diagnostic corner color
+right after `CLOAD` returned `OK`, before doing anything else: cyan
+(motor on, then stalled, not at the true end of file). Initially treated
+this as new evidence for a "CLOAD retries repeatedly, each retry wipes
+the program" theory - but on review this is the exact same cyan the
+2026-09-27 session already saw and correctly wrote off as harmless
+(motor legitimately turns off once BASIC is satisfied, long before
+actually consuming all 200 redundant EOF-padding blocks - the
+stall-watchdog just can't tell "motor off because done" from "motor off
+because stuck"). Retracted that theory; this diagnostic doesn't actually
+discriminate between it and normal success.
+
+Separately, chasing what key produces `*` (needed to type
+`PEEK(25)*256+PEEK(26)` as a diagnostic) surfaced a real, independent
+bug: real Dragon/CoCo keyboards produce `*` via Shift+`:` (same
+bit-paired-ASCII scheme confirmed earlier for Shift+8=`(` - `:`=0x3A,
+`*`=0x2A, same 0x10 offset). But `dragon_keyboard.sv`'s handling of the
+`:`/`;` key (USB HID 0x33) unconditionally suppresses Dragon's own SHIFT
+line whenever it maps to the colon position ("Dragon has separate
+dedicated keys, no shift needed either way" - true for plain `:`/`;`,
+but incomplete: Shift+`:` is a real, distinct, currently-unreachable
+combination). **No key combination on this core can currently produce
+`*` at all.** Not yet fixed - noted here so it isn't lost; likely fix is
+mapping the USB numpad-multiply key (HID 0x55) directly to Dragon
+Shift+colon, rather than disturbing the digit row's existing (correct)
+behavior.
+
+Worked around the immediate diagnostic need by asking for `PEEK(25)` and
+`PEEK(26)` separately (`30` and `1`) instead of the combined expression.
+**This resolved a real, concrete bug in `test_crunched.cas` itself**:
+`30*256+1 = 7681 = $1E01`, not the `$1E00` guessed - confirming the
+generic-CoCo reference over the Dragon-specific one this project had
+weighted more heavily. Fixed `generate_test_crunched_cas.py`'s `TXTTAB`
+constant to `0x1E01`, regenerated (line 1's `next_line_addr` now
+correctly `0x1E1A`, not the wrong `0x1E19`), re-verified bit-accurate
+playback through the real `cas_ram` timing model (`ALL 1392 BYTES
+MATCH`), and re-copied to the SD card (MD5-verified). **Not yet
+re-tested on hardware** - this is the immediate next step next session.
+
+Current understanding heading into next session: the ASCII `test.cas`
+failure and the (now-corrected) `test_crunched.cas` failure may or may
+not share a root cause - the crunched file's failure had an obvious,
+sufficient, independent explanation (wrong hardcoded address) that had
+nothing to do with `CLOAD`'s ASCII-vs-crunched code path distinction.
+If the corrected crunched file now loads/lists/runs cleanly, that
+restores the earlier theory (ASCII CLOAD's own line-retyping mechanism
+is the one broken thing) with crunched CLOAD confirmed working. If it
+*still* fails even with the correct address, that points back to
+something shared by `CLOAD` generically (both sub-modes), not ASCII
+specifically - worth distinguishing clearly by testing `LIST`/`RUN`
+result carefully once more.

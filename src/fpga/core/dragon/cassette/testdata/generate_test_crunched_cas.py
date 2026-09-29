@@ -45,22 +45,17 @@ generate_test_cas.py - separately confirms PRINT=$87 and GO=$81, with
 "GO TO"/"GO SUB" stored as the GO token followed by literal,
 unabbreviated ASCII text, not a dedicated TO/SUB token.)
 
-**Highest-risk assumption in this file, flagged explicitly**: TXTTAB
-(the default BASIC program start address after cold boot) is taken as
-$1E00, per dragon32.info's memmap page stating the Dragon specifically
-(not just generic CoCo) makes free program memory start at 7680 ($1E00)
-after its startup PCLEAR4. Community CoCo references for machines with
-Extended BASIC instead cite $1E01 - a 1-byte discrepancy this project
-has no way to resolve from documentation alone (no direct access to a
-Dragon 32 ROM disassembly or real hardware to confirm against). If this
-file fails to load correctly, the fastest way to get the real value
-directly from this core's own running ROM is to type, after a fresh NEW:
-PRINT PEEK(25)*256+PEEK(26) - memory locations 25/26 hold BASIC's own
-live program-start pointer - and regenerate this file with TXTTAB set to
-whatever that prints.
+TXTTAB was originally guessed as $1E00 (per dragon32.info's Dragon-
+specific memmap page), flagged as unverified against a 1-byte-different
+generic-CoCo figure ($1E01) with no way to resolve from documentation
+alone. Resolved directly against this core's own running ROM: a
+2026-09-29 hardware test read PEEK(25)=30, PEEK(26)=1, i.e. TXTTAB=
+30*256+1=7681=$1E01 - confirming the generic-CoCo figure, not the
+Dragon-specific doc, was right for this core. Value below updated
+accordingly.
 """
 
-TXTTAB = 0x1E00  # see header comment above - the one unverified assumption here
+TXTTAB = 0x1E01  # confirmed via PEEK(25)*256+PEEK(26) on real hardware, 2026-09-29
 
 PRINT_TOKEN = 0x87
 GO_TOKEN = 0x81
