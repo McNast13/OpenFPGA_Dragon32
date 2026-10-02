@@ -40,3 +40,19 @@ set cpu_edges [get_registers {ic|dragon|cpu|e_r ic|dragon|cpu|q_r}]
 set cpu_regs  [remove_from_collection $cpu_all $cpu_edges]
 set_multicycle_path -from $cpu_regs -to $cpu_regs -setup 4
 set_multicycle_path -from $cpu_regs -to $cpu_regs -hold 3
+
+# CPU outputs (address/data/R-W, from the same once-per-cycle registers)
+# to the rest of the machine. Everything outside the CPU that reacts to
+# them is gated by the SAM's spd_ena: the first such enable after E falls
+# is 4 clocks later at normal speed but only 2 in the SAM's fast mode, and
+# the CPU registers change half a clock after E falls (negedge) - so 1.5
+# periods is the real budget, i.e. -setup 2 from a negedge launch. Not 4:
+# the PIAs' read strobes have side effects (clearing IRQ flags) and can
+# fire on that first enable, so they must see a settled address.
+# Checked consumers: ram1 (writes only while E is high), pia/pia1
+# (clk_ena = spd_ena), SAM WRITE_CR (spd_ena, late-cycle we_n_s), SAM
+# fast_slow latch (state 0010, >= 2 enables later), dragoncoco's data
+# latches (clk_enable-gated); s_device_select_reg is assigned but unused.
+set dragon_other [remove_from_collection [get_keepers {ic|dragon|*}] [get_keepers {ic|dragon|cpu|*}]]
+set_multicycle_path -from $cpu_regs -to $dragon_other -setup 2
+set_multicycle_path -from $cpu_regs -to $dragon_other -hold 1
