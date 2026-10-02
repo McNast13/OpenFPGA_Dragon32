@@ -56,3 +56,13 @@ set_multicycle_path -from $cpu_regs -to $cpu_regs -hold 3
 set dragon_other [remove_from_collection [get_keepers {ic|dragon|*}] [get_keepers {ic|dragon|cpu|*}]]
 set_multicycle_path -from $cpu_regs -to $dragon_other -setup 2
 set_multicycle_path -from $cpu_regs -to $dragon_other -hold 1
+
+# Read-data latches (dragoncoco.sv: ram_dout, rom8_dout2, romC_dout2,
+# pia_dout2, pia1_dout2, rom8_64_1_2) -> the CPU. They load on the
+# clk_enable tick after SAM raises RAS at state 1101, i.e. state 1110; E
+# falls one SAM state later and the CPU captures on the following negedge:
+# 4.5 periods later at normal speed, 2.5 in SAM fast mode. Posedge ->
+# negedge, so -setup 3 = 2.5 periods.
+set cpu_rd_latches [get_registers {ic|dragon|ram_dout[*] ic|dragon|rom8_dout2[*] ic|dragon|romC_dout2[*] ic|dragon|pia_dout2[*] ic|dragon|pia1_dout2[*] ic|dragon|rom8_64_1_2[*]}]
+set_multicycle_path -from $cpu_rd_latches -to $cpu_regs -setup 3
+set_multicycle_path -from $cpu_rd_latches -to $cpu_regs -hold 2
