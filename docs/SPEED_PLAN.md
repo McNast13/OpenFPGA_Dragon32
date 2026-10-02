@@ -77,12 +77,21 @@ too slow for the chip.
   top-right of the picture). Its job - debugging tape loading - is done,
   and it's now just clutter on screen. It's in `core_top.v` from the
   `TEMPORARY DIAGNOSTIC` comment (~line 829): `cas_stall_watchdog`, the
-  `dbg_*` signals, `cas_diag_color` and `cas_diag_patch`. Tie
-  `video_frame_buffer`'s `wr_overlay_en` to 0, or remove the overlay ports
-  from `video_frame_buffer.sv` altogether (keep them if the on-screen
-  keyboard will draw through them - decide then). Doing it in this step
+  `dbg_*` signals, `cas_diag_color` and `cas_diag_patch`. Doing it in this step
   also matters for the speed change itself: the watchdog's "~1 s" is a
   hard-coded `14_850_000` clock count that would be wrong at 57 MHz.
+- **Keep the frame buffer's overlay ports** (`wr_overlay_en` /
+  `wr_overlay_color` in `video_frame_buffer.sv`) - they're what the
+  on-screen keyboard will draw through. Only the diagnostic that drives
+  them goes: tie `wr_overlay_en` to `1'b0` and `wr_overlay_color` to
+  `24'h0` in `core_top.v` for now, with a comment saying the keyboard
+  overlay will drive them. The ports stay working and tested, and the
+  diagnostic's coordinate check (`dragon_h_count`/`dragon_v_count`) is a
+  ready-made example of how to place an overlay on screen.
+- Worth knowing for the keyboard: the overlay is applied as the Dragon
+  *writes* each frame, so it redraws at the machine's frame rate - ~15 fps
+  today, 50/60 fps once this plan is done. Another reason to do the speed
+  work before the keyboard.
 - Remove the now-unused `clk_dragon_90deg` output if nothing uses it any
   more (the scaler moved to `clk_core_12288` with the frame buffer).
 
