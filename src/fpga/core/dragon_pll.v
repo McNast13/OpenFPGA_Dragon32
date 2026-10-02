@@ -41,6 +41,10 @@
 // how much margin is really available and how close to 57.27MHz is safe.
 //
 
+// SPEED_PLAN.md step 1 (branch speed/step1-timing-report only): back at
+// the real 57.272727 MHz, expecting timing to FAIL - this build exists to
+// get detailed failing-path reports, not to be installed.
+//
 `default_nettype none
 
 module dragon_pll (
@@ -52,18 +56,18 @@ module dragon_pll (
 );
 
     // outclk_1: same frequency as outclk_0, phase-shifted 90 degrees
-    // (a quarter period at 14.85 MHz = 1e12/14850000/4 ps = ~16835 ps).
+    // (a quarter period at 57.272727 MHz = ~4365 ps).
     // Needed for the scaler's DDIO output clock - see core_top.v.
 
     altera_pll #(
-        .fractional_vco_multiplier("false"),
+        .fractional_vco_multiplier("true"),
         .reference_clock_frequency("74.25 MHz"),
         .operation_mode("normal"),
         .number_of_clocks(2),
-        .output_clock_frequency0("14.85 MHz"),
+        .output_clock_frequency0("57.272727 MHz"),
         .phase_shift0("0 ps"),
         .duty_cycle0(50),
-        .output_clock_frequency1("14.85 MHz"), .phase_shift1("16835 ps"), .duty_cycle1(50),
+        .output_clock_frequency1("57.272727 MHz"), .phase_shift1("4365 ps"), .duty_cycle1(50),
         .output_clock_frequency2("0 MHz"), .phase_shift2("0 ps"), .duty_cycle2(50),
         .output_clock_frequency3("0 MHz"), .phase_shift3("0 ps"), .duty_cycle3(50),
         .output_clock_frequency4("0 MHz"), .phase_shift4("0 ps"), .duty_cycle4(50),
