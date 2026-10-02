@@ -1,6 +1,8 @@
 # Plan: run the Dragon at its real speed
 
-Status: **plan, not started** (2026-10-02).
+Status (2026-10-02): **steps 1-5 done and hardware-verified** - the core
+runs at the real 57.272727 MHz (merged to `main`). Remaining: step 6
+(video output rate) and step 8 (UK 50 Hz).
 
 ## Where we are
 
