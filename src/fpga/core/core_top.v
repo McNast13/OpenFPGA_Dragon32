@@ -729,6 +729,8 @@ end
     wire [7:0]  cas_data;
     wire        dragon_casdout;
     wire        dragon_cas_relay;
+    wire [11:0] dragon_sound;   // see "audio output" below
+    wire        dragon_sndout;
 
 cas_ram #(.ADDR_WIDTH(16)) u_cas_ram (
     .clk      ( clk_dragon  ),
@@ -752,8 +754,8 @@ cas_player u_cas_player (
 
 // The Dragon 32 machine itself - ported from MiSTer's CoCo2_MiSTer as-is
 // (see NOTES.md for the full inventory). Phase 1 scope only: get it
-// booting to the BASIC prompt with a real picture. Audio (phase 2) is
-// still silent here. Keyboard input (phase 3) uses the Pocket's docked
+// booting to the BASIC prompt with a real picture. Audio is the 6-bit DAC
+// plus 1-bit sound, see "audio output" below. Keyboard input (phase 3) uses the Pocket's docked
 // USB keyboard, via apf2hid.sv + dragon/usbkbd/dragon_keyboard.sv - see
 // that file's header for the full architecture writeup (why it doesn't
 // use dragoncoco.sv's own ps2_key port).
@@ -997,10 +999,10 @@ dragoncoco dragon (
     .casdout        ( dragon_casdout   ),
     .cas_relay      ( dragon_cas_relay ),
 
-    // audio deferred to phase 2
+    // audio - mixed and sent to the Pocket below (see "audio output")
     .cass_snd       ( 12'b0 ),
-    .sound          (  ),
-    .sndout         (  ),
+    .sound          ( dragon_sound  ),
+    .sndout         ( dragon_sndout ),
 
     .v_count        ( dragon_v_count ),
     .h_count        ( dragon_h_count ),
@@ -1080,50 +1082,38 @@ assign video_hs = video_fb_hsync;
 
 
 //
-// audio i2s silence generator
-// see other examples for actual audio generation
+// audio output
+//
+// Two real Dragon sound sources, summed: the 6-bit DAC (PIA1 port A
+// bits 7:2, routed through the analog mux when SND is enabled and
+// SELA/SELB=00 - dac.sv puts it in dragon_sound[11:6]) and the 1-bit
+// "beeper" (PIA1 port B bit 1). Sent as unsigned 15-bit mono: DAC full
+// scale = 4095<<2 = 16380, beeper adds 4096, so max 20476 - headroom
+// left, no clipping.
+//
+// Pitch caveat: the whole machine runs at ~1/4 real speed (clk_dragon
+// 14.85MHz vs the 57.27MHz design reference - see dragon_pll.v), and
+// Dragon software makes tones with CPU timing loops, so everything will
+// sound ~2 octaves low until the machine runs at full speed.
 //
 
-assign audio_mclk = audgen_mclk;
-assign audio_dac = audgen_dac;
-assign audio_lrck = audgen_lrck;
-
-// generate MCLK = 12.288mhz with fractional accumulator
-    reg         [21:0]  audgen_accum;
-    reg                 audgen_mclk;
-    parameter   [20:0]  CYCLE_48KHZ = 21'd122880 * 2;
-always @(posedge clk_74a) begin
-    audgen_accum <= audgen_accum + CYCLE_48KHZ;
-    if(audgen_accum >= 21'd742500) begin
-        audgen_mclk <= ~audgen_mclk;
-        audgen_accum <= audgen_accum - 21'd742500 + CYCLE_48KHZ;
-    end
+    reg  [14:0] audio_sample;
+always @(posedge clk_dragon) begin
+    audio_sample <= {1'b0, dragon_sound, 2'b00} + (dragon_sndout ? 15'd4096 : 15'd0);
 end
 
-// generate SCLK = 3.072mhz by dividing MCLK by 4
-    reg [1:0]   aud_mclk_divider;
-    wire        audgen_sclk = aud_mclk_divider[1] /* synthesis keep*/;
-    reg         audgen_lrck_1;
-always @(posedge audgen_mclk) begin
-    aud_mclk_divider <= aud_mclk_divider + 1'b1;
-end
-
-// shift out audio data as I2S 
-// 32 total bits per channel, but only 16 active bits at the start and then 16 dummy bits
-//
-    reg     [4:0]   audgen_lrck_cnt;    
-    reg             audgen_lrck;
-    reg             audgen_dac;
-always @(negedge audgen_sclk) begin
-    audgen_dac <= 1'b0;
-    // 48khz * 64
-    audgen_lrck_cnt <= audgen_lrck_cnt + 1'b1;
-    if(audgen_lrck_cnt == 31) begin
-        // switch channels
-        audgen_lrck <= ~audgen_lrck;
-        
-    end 
-end
+sound_i2s #(
+    .CHANNEL_WIDTH ( 15 ),
+    .SIGNED_INPUT  ( 0 )
+) u_sound_i2s (
+    .clk_74a    ( clk_74a      ),
+    .clk_audio  ( clk_dragon   ),
+    .audio_l    ( audio_sample ),
+    .audio_r    ( audio_sample ),
+    .audio_mclk ( audio_mclk   ),
+    .audio_lrck ( audio_lrck   ),
+    .audio_dac  ( audio_dac    )
+);
 
 
 ///////////////////////////////////////////////

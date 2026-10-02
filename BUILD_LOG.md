@@ -1320,3 +1320,19 @@ with a separate `00 00` after the last line), so line 20 was treated as
 the end and never listed. Fixed the generator (line 20 now links to
 `$1E26`, followed by `00 00`), regenerated (1778 bytes). Waiting for a
 hardware retest.
+
+## 2026-10-02 — Jet Set Willy loads (12 min); audio wired up
+
+`CLOADM` of `JetSetWilly_V2.cas` (34251 bytes: header + 128×255-byte
+blocks loading `$0150`-`$80CF`, all checksums good) **loads and runs**
+after ~12 minutes - exactly the predicted ~3 min real-hardware load time
+× the machine's ~1/4 speed. It was never stuck before, just slow.
+
+No sound: audio had never been connected (`core_top.v` left `sound`/
+`sndout` unconnected and output an all-zero I2S stream). Now mixes the
+6-bit DAC (`dac.sv`'s `sound`) + 1-bit beeper (PIA1 PB1) into unsigned
+15-bit mono through agg23's `sound_i2s.sv`/`sync_fifo.sv` (MIT, same
+library as the vendored `data_loader.sv`). One local change:
+`sync_fifo`'s dcfifo set to `use_eab = "OFF"` - M10Ks are 308/308 used
+by the frame buffer. Expect everything ~2 octaves low (1/4 speed).
+Not yet hardware-tested.

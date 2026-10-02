@@ -747,6 +747,10 @@ set_global_assignment -name SIP_FILE core/mf_pllbase.sip
 
 # agg23/analogue-pocket-utils (MIT) - APF bridge to ioctl-style write stream
 set_global_assignment -name SYSTEMVERILOG_FILE core/pocket_utils/data_loader.sv
+# ...and its audio I2S bridge (sync_fifo locally changed to not use an M10K -
+# see the comment at the top of sync_fifo.sv)
+set_global_assignment -name SYSTEMVERILOG_FILE core/pocket_utils/sync_fifo.sv
+set_global_assignment -name SYSTEMVERILOG_FILE core/pocket_utils/sound_i2s.sv
 
 # Dragon 32 machine (ported from MiSTer's CoCo2_MiSTer, rtl/ -> here as-is;
 # see NOTES.md for the full inventory and license findings)
