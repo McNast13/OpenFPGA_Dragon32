@@ -499,27 +499,21 @@ core_bridge_cmd icb (
 // Dragon 32 machine clock
 //
 // dragoncoco.sv (and everything inside it) is a single-clock-domain design
-// wanting ~57.272727 MHz (16x NTSC colorburst - a real hardware constant of
-// the machine, unrelated to the Pocket's own clocking). Actually driven at
-// 14.85 MHz for now, about a quarter of real-time speed - see dragon_pll.v
-// for the full story on why (real timing closure limits on this specific
-// part, not a PLL configuration issue) and why that's an acceptable trade
-// for phase 1's gate. Derived from the APF system reference clock via a
-// hand-written altera_pll instance - see dragon_pll.v and NOTES.md for why
-// this didn't need Quartus's IP wizard.
-// outclk_1 is the same frequency, phase-shifted 90 degrees, for the
-// scaler's DDIO output clock (mirrors how mf_pllbase below does the same
-// thing for its own outputs).
+// running at 57.272727 MHz (16x NTSC colorburst - a real hardware constant
+// of the machine, unrelated to the Pocket's own clocking), which the SAM
+// divides down to the real 0.895 MHz CPU clock. Timing closes thanks to
+// the multicycle constraints in core_constraints.sdc - see dragon_pll.v
+// and docs/SPEED_PLAN.md. Derived from the APF system reference clock via
+// a hand-written altera_pll instance - see dragon_pll.v and NOTES.md for
+// why this didn't need Quartus's IP wizard.
 
     wire    clk_dragon;
-    wire    clk_dragon_90deg;
     wire    pll_dragon_locked;
 
 dragon_pll dp1 (
     .refclk    ( clk_74a ),
     .rst       ( 0 ),
     .outclk_0  ( clk_dragon ),
-    .outclk_1  ( clk_dragon_90deg ),
     .locked    ( pll_dragon_locked )
 );
 
@@ -542,7 +536,8 @@ synch_3 s_rst_dragon (reset_n, reset_n_dragon, clk_dragon);
 //
 // WRITE_MEM_CLOCK_DELAY/WRITE_MEM_EN_CYCLE_LENGTH: originally copied
 // PokemonMini's (12, 5) verbatim, but that core's clk_memory runs at
-// 40MHz - ours (clk_dragon) is only 14.85MHz (see dragon_pll.v), so 12
+// 40MHz - ours (clk_dragon) was only 14.85MHz at the time (57.27MHz now,
+// which only adds margin - see dragon_pll.v), so 12
 // cycles there took ~808ns against APF's ~1010ns-per-word bridge cadence
 // (data_loader.sv's own comment) - only ~20% margin. A hardware test
 // showed the CPU stuck forever re-fetching its own reset vector
@@ -826,117 +821,24 @@ synch_3 #(.WIDTH(32)) s_cont2_joy (cont2_joy, cont2_joy_s, clk_dragon);
     wire [7:0] joy2_x = cont2_key_s[3] ? 8'd255 : cont2_key_s[2] ? 8'd0 : cont2_joy_s[7:0];
     wire [7:0] joy2_y = cont2_key_s[1] ? 8'd255 : cont2_key_s[0] ? 8'd0 : cont2_joy_s[15:8];
 
-// TEMPORARY DIAGNOSTIC - cassette load still hangs on CLOAD after the
-// target_dataslot_read fix (see BUILD_LOG.md). The first hardware test
-// with this diagnostic came back solid red, even before CLOAD ran -
-// meaning dataslot_update (the live-reload path) never fired at all,
-// which is what led to adding the boot-time path back above. Small
-// top-right corner patch, real video everywhere else, so the hang
-// itself stays visible the whole time this is checked.
+// Frame buffer overlay - reserved for the on-screen keyboard (not built
+// yet). video_frame_buffer.sv's wr_overlay_en/wr_overlay_color replace a
+// pixel as the Dragon writes it, so whatever drives them redraws at the
+// machine's own frame rate. Tied off for now; the cassette-debugging
+// diagnostic square that used to drive them has been removed (its job is
+// done - see BUILD_LOG.md 2026-09-27..10-02).
 //
-// Sticky "ever happened" latches, checked in priority order (earliest
-// failure wins) - primary/neutral colors only:
-//   RED    - neither delivery path ever triggered at all - the file
-//            select action itself never reached here, via either path
-//   ORANGE - the live-reload path (dataslot_update) is the one that
-//            triggered, but target_dataslot_ack never came back
-//   YELLOW - ack came back, but target_dataslot_done never fired
-//   BLUE   - the file arrived (either path), but cas_new_file never
-//            reached clk_dragon - a CDC bug in the toggle crossing
-//   WHITE  - cas_new_file fired (cas_len should be set), but motor_on
-//            (cas_relay) never asserts - BASIC never turned the tape
-//            motor on, unrelated to loading itself
-//   BLACK  - motor asserted, but casdout never toggled - a cas_player bug
-//   GREEN  - casdout did toggle - the pipeline is fine, so the remaining
-//            problem is in the file's own content/format, or how CLOAD
-//            interprets it, not in delivery
-// cas_boot_wr is itself already in the clk_dragon domain (data_loader's
-// write_en is driven inside its own "always @(posedge clk_memory)", not
-// clk_74a - confirmed by reading pocket_utils/data_loader.sv directly),
-// so its sticky latch belongs with the other clk_dragon-domain latches
-// below, not synchronized from a clk_74a copy that would never see it.
-    reg dbg_update_seen_74a  = 1'b0;
-    reg dbg_ack_seen_74a     = 1'b0;
-    reg dbg_done_seen_74a    = 1'b0;
-always @(posedge clk_74a) begin
-    if (dataslot_update && dataslot_update_id == 16'd1) dbg_update_seen_74a <= 1'b1;
-    if (target_dataslot_ack)  dbg_ack_seen_74a  <= 1'b1;
-    if (target_dataslot_done) dbg_done_seen_74a <= 1'b1;
-end
-
-    wire dbg_update_seen, dbg_ack_seen, dbg_done_seen;
-synch_3 s_dbg_update  (dbg_update_seen_74a,  dbg_update_seen,  clk_dragon);
-synch_3 s_dbg_ack     (dbg_ack_seen_74a,     dbg_ack_seen,     clk_dragon);
-synch_3 s_dbg_done    (dbg_done_seen_74a,    dbg_done_seen,    clk_dragon);
-
-    reg dbg_boot_wr_seen  = 1'b0;
-    reg dbg_new_file_seen = 1'b0;
-    reg dbg_motor_seen    = 1'b0;
-    reg dbg_casdout_toggled = 1'b0;
-    reg dbg_casdout_prev  = 1'b0;
-always @(posedge clk_dragon) begin
-    if (cas_boot_wr) dbg_boot_wr_seen <= 1'b1;
-    if (cas_new_file) dbg_new_file_seen <= 1'b1;
-    if (dragon_cas_relay) dbg_motor_seen <= 1'b1;
-    dbg_casdout_prev <= dragon_casdout;
-    if (dragon_casdout != dbg_casdout_prev) dbg_casdout_toggled <= 1'b1;
-end
-
-// The checks above are all sticky ("did this ever happen") - fine for
-// catching a pipeline that never starts, but a hardware test showed
-// CLOAD progressing further this time (reaching "F TEST", i.e. finding
-// the filename) then hanging with no further progress - a stall
-// *partway through*, which a purely sticky "casdout toggled at least
-// once" check can't distinguish from "still actively working". This
-// watchdog resets whenever cas_addr (the tape player's read position)
-// changes, and flags a stall if it hasn't moved in ~1 second despite the
-// motor being on and the read not yet having reached the end of the file.
-    reg  [15:0] cas_addr_prev = 16'hFFFF;
-    reg  [23:0] cas_stall_watchdog = 24'd0;
-always @(posedge clk_dragon) begin
-    cas_addr_prev <= cas_addr;
-    if (cas_addr != cas_addr_prev) begin
-        cas_stall_watchdog <= 24'd0;
-    end else if (cas_stall_watchdog != {24{1'b1}}) begin
-        cas_stall_watchdog <= cas_stall_watchdog + 1'b1;
-    end
-end
-    // Distinguishes "fully consumed the whole file" from "still working" -
-    // a hardware test came back green (not cyan) after 60+ seconds with no
-    // visible screen change, which the old green branch couldn't tell
-    // apart: it means either one. If cas_addr has actually reached the
-    // last valid position, the tape side is done and the real hang is in
-    // whatever Color BASIC does *after* reading the data (EOF detection,
-    // returning to the "OK" prompt) - not in cas_player/cas_ram at all.
-    wire dbg_cas_at_end = (cas_len != 16'd0) && (cas_addr >= cas_len - 16'd1);
-    wire dbg_cas_stalled = dbg_motor_seen && (cas_len != 16'd0) && !dbg_cas_at_end
-                         && (cas_stall_watchdog > 24'd14_850_000); // ~1s @ clk_dragon
-
-    wire dbg_arrived = dbg_boot_wr_seen | dbg_update_seen;
-    // ack/done are only meaningful for the live-reload path - skip them
-    // (fall straight through to the new_file/motor/casdout checks) if
-    // the boot-time path is the one that actually delivered the file.
-    wire [23:0] cas_diag_color =
-        ~dbg_arrived                                          ? 24'hFF0000 : // red
-        (dbg_update_seen && !dbg_boot_wr_seen && ~dbg_ack_seen)  ? 24'hFF8000 : // orange
-        (dbg_update_seen && !dbg_boot_wr_seen && ~dbg_done_seen) ? 24'hFFFF00 : // yellow
-        ~dbg_new_file_seen ? 24'h0000FF : // blue
-        ~dbg_motor_seen    ? 24'hFFFFFF : // white
-        ~dbg_casdout_toggled ? 24'h000000 : // black
-        dbg_cas_stalled      ? 24'h00FFFF : // cyan: started, then stalled mid-file
-        dbg_cas_at_end       ? 24'hFF00FF : // magenta: fully read the whole file already
-                               24'h00FF00;  // green: still actively progressing, below the end
-
-    wire [8:0] dragon_h_count, dragon_v_count;
-    // dragon_h_count/v_count are RAW mc6847pace counters spanning the
-    // whole raster (front porch/sync/back porch/border/video/border), not
-    // relative to the active video window - H_LEFT_BORDER=148/H_VIDEO=404
-    // and V2_TOP_BORDER=43/V2_VIDEO=235 (mc6847pace.vhd's own constants)
-    // mark where the real 256x192 active area starts/ends. This patch is
-    // the top-right 32x32 corner OF THE ACTIVE AREA: h in [372,403], v in
-    // [43,74].
-    wire cas_diag_patch = (dragon_h_count >= 9'd372) && (dragon_h_count < 9'd404)
-                        && (dragon_v_count >= 9'd43)  && (dragon_v_count < 9'd75);
+// To place something on screen: dragon_h_count/v_count are RAW
+// mc6847pace counters spanning the whole raster (porches/sync/border/
+// video), not relative to the active window. H_LEFT_BORDER=148/
+// H_VIDEO=404 and V2_TOP_BORDER=43/V2_VIDEO=235 (mc6847pace.vhd's own
+// constants) mark the real 256x192 active area - e.g. the old diagnostic
+// used h in [372,403], v in [43,74] for the top-right 32x32 corner. (If
+// the PAL border padding in docs/SPEED_PLAN.md step 8 is added, the V
+// values move down by 25.)
+    wire [8:0]  dragon_h_count, dragon_v_count;
+    wire        fb_overlay_en    = 1'b0;
+    wire [23:0] fb_overlay_color = 24'h000000;
 
 dragoncoco dragon (
     .clk            ( clk_dragon ),
@@ -1057,8 +959,8 @@ video_frame_buffer vid_fb (
     .wr_vblank      ( dragon_vblank ),
     .wr_vsync       ( dragon_vsync ),
 
-    .wr_overlay_en    ( cas_diag_patch ),
-    .wr_overlay_color ( cas_diag_color ),
+    .wr_overlay_en    ( fb_overlay_en ),
+    .wr_overlay_color ( fb_overlay_color ),
 
     .rd_ref_clk     ( clk_core_12288 ),
     .rd_ref_clk_90  ( clk_core_12288_90deg ),
@@ -1091,10 +993,9 @@ assign video_hs = video_fb_hsync;
 // scale = 4095<<2 = 16380, beeper adds 4096, so max 20476 - headroom
 // left, no clipping.
 //
-// Pitch caveat: the whole machine runs at ~1/4 real speed (clk_dragon
-// 14.85MHz vs the 57.27MHz design reference - see dragon_pll.v), and
-// Dragon software makes tones with CPU timing loops, so everything will
-// sound ~2 octaves low until the machine runs at full speed.
+// Pitch follows the machine's speed (software makes tones with CPU timing
+// loops) - correct now clk_dragon is the real 57.27 MHz; it was ~2 octaves
+// low while the core ran at 14.85 MHz.
 //
 
     reg  [14:0] audio_sample;

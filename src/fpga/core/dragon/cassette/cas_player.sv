@@ -20,24 +20,16 @@
 // would produce from a real analog signal anyway) is exactly right - no
 // DAC needed.
 //
-// Clock-relative timing, not wall-clock timing: this machine runs
-// clk_dragon at 14.85 MHz, not the ~57.272727 MHz (16x NTSC colorburst)
-// dragon_pll.v documents as the "real" target - a deliberate trade for
-// timing closure (see NOTES.md/dragon_pll.v). Every other clock in the
-// machine (SAM's E/Q generation, the CPU's own effective instruction
-// rate) is *already* a fixed divide of clk_dragon, so the whole machine
-// runs uniformly slower than real hardware, self-consistently - Color
-// BASIC's cassette-reading routine measures tape bit timing by counting
-// its own CPU cycles between edges, and that CPU cycle rate has already
-// been scaled down by the same factor clk_dragon has. So the tape
-// waveform needs the same treatment: expressed as a fixed number of
-// clk_dragon *cycles* per bit derived from the original 57,272,727 Hz
-// design frequency divided by the tone frequency - not literal 1200/2400
-// Hz relative to clk_dragon's actual (slower) rate, which would make the
-// tape run fast relative to what the slowed-down CPU is measuring it
-// against. This also means nothing here needs revisiting if clk_dragon's
-// frequency ever changes later (e.g. if timing closure improves) - it
-// scales the same way the rest of the machine already does.
+// Timing: expressed as clk_dragon cycles per half-bit, derived from the
+// 57,272,727 Hz machine clock (dragon_pll.v) divided by the tone frequency,
+// so at that clock these are real 1200/2400 Hz tones. If clk_dragon ever
+// changes, these constants must change with it - though only the *ratio*
+// to the machine's own speed really matters: Color BASIC's cassette
+// routine measures bit timing by counting its own CPU cycles between
+// edges, and every CPU cycle is a fixed 64 clk_dragon cycles (the SAM's
+// divide). That's why loading still worked while the core temporarily ran
+// at 14.85 MHz (~1/4 speed) with these same constants - the tape was
+// slowed down by exactly the same factor as the CPU measuring it.
 //
 // End of file: loops back to the start rather than going silent. A real
 // cassette, even on blank/run-out tape, never produces genuine, edge-free
@@ -74,7 +66,7 @@ module cas_player (
     output reg          casdout
 );
 
-    // Half-cycle counts: (57,272,727 Hz design reference) / (tone Hz) / 2,
+    // Half-cycle counts: (57,272,727 Hz clk_dragon) / (tone Hz) / 2,
     // rounded to the nearest integer. Sub-0.1% rounding error, utterly
     // negligible against Color BASIC's own tape-speed tolerance.
     localparam [15:0] HALF_PERIOD_BIT1 = 16'd11932; // 2400 Hz
