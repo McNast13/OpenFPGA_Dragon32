@@ -1336,3 +1336,10 @@ library as the vendored `data_loader.sv`). One local change:
 `sync_fifo`'s dcfifo set to `use_eab = "OFF"` - M10Ks are 308/308 used
 by the frame buffer. Expect everything ~2 octaves low (1/4 speed).
 Not yet hardware-tested.
+
+## 2026-10-02 — hardware test (audio build e200439) — sound works
+
+Installed CI build of `e200439` (timing met, M10K still 308/308).
+`SOUND 89,30` plays a tone on real hardware - audio path confirmed.
+(Pitch expected ~2 octaves low at current 1/4 machine speed - see
+`docs/SPEED_PLAN.md`.)
