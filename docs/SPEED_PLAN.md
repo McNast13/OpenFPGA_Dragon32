@@ -1,8 +1,11 @@
 # Plan: run the Dragon at its real speed
 
-Status (2026-10-02): **steps 1-5 done and hardware-verified** - the core
-runs at the real 57.272727 MHz (merged to `main`). Remaining: step 6
-(video output rate) and step 8 (UK 50 Hz).
+Status (2026-10-03): **steps 1-5 and 8 done and hardware-verified** - the
+core runs at the real 57.272727 MHz with UK 50 Hz frame timing (both on
+`main`). **Remaining: step 6** - retune `video_frame_buffer.sv`'s output
+(~46 Hz today) to 50 Hz to match. Optional later: make PAL/NTSC a menu
+option (`PAL` parameter in `core_top.v`), and keep an eye on timing
+margin (+0.676 ns on the last build).
 
 ## Where we are
 
