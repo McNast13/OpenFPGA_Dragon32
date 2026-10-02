@@ -73,6 +73,16 @@ too slow for the chip.
   (enabled every 4 clocks) and the SAM's own enabled processes.
 - **Do not** relax `video_frame_buffer`'s read side, the cassette loader
   or the bridge/`data_loader` paths - they're real full-rate logic.
+- Remove the cassette diagnostic square (the coloured 32x32 patch in the
+  top-right of the picture). Its job - debugging tape loading - is done,
+  and it's now just clutter on screen. It's in `core_top.v` from the
+  `TEMPORARY DIAGNOSTIC` comment (~line 829): `cas_stall_watchdog`, the
+  `dbg_*` signals, `cas_diag_color` and `cas_diag_patch`. Tie
+  `video_frame_buffer`'s `wr_overlay_en` to 0, or remove the overlay ports
+  from `video_frame_buffer.sv` altogether (keep them if the on-screen
+  keyboard will draw through them - decide then). Doing it in this step
+  also matters for the speed change itself: the watchdog's "~1 s" is a
+  hard-coded `14_850_000` clock count that would be wrong at 57 MHz.
 - Remove the now-unused `clk_dragon_90deg` output if nothing uses it any
   more (the scaler moved to `clk_core_12288` with the frame buffer).
 
