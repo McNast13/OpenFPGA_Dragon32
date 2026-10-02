@@ -1343,3 +1343,5 @@ Installed CI build of `e200439` (timing met, M10K still 308/308).
 `SOUND 89,30` plays a tone on real hardware - audio path confirmed.
 (Pitch expected ~2 octaves low at current 1/4 machine speed - see
 `docs/SPEED_PLAN.md`.)
+Jet Set Willy's in-game music also plays - very low pitched, as expected
+at 1/4 machine speed. Confirms the DAC path (not just the 1-bit sound).
