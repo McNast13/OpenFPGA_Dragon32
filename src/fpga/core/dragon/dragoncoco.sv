@@ -1,7 +1,9 @@
 
 
 // todo: find a better name
-module dragoncoco(
+module dragoncoco #(
+  parameter PAL = 0   // 1 = UK/PAL 50 Hz frame timing, 0 = NTSC - see mc6847pace.vhd
+)(
   input clk, // 57.272727 mhz
   input turbo,
   input trig_reset_n, // todo: reset_n doesn't work!  // done. CPU needs reset low for 2 full cpu cycles (that's 128 clk cycles) with the clocks running.
@@ -656,7 +658,7 @@ assign DLine2 = {
 {9{5'b10000}}
 };
 
-mc6847pace vdg(
+mc6847pace #(.PAL(PAL)) vdg(
   .clk(clk),
 //  .clk_ena(clk_enable),//VClk - vclk doesn't seem to work
   .clk_ena(VClk),//VClk - vclk doesn't seem to work

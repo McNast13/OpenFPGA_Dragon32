@@ -833,14 +833,18 @@ synch_3 #(.WIDTH(32)) s_cont2_joy (cont2_joy, cont2_joy_s, clk_dragon);
 // video), not relative to the active window. H_LEFT_BORDER=148/
 // H_VIDEO=404 and V2_TOP_BORDER=43/V2_VIDEO=235 (mc6847pace.vhd's own
 // constants) mark the real 256x192 active area - e.g. the old diagnostic
-// used h in [372,403], v in [43,74] for the top-right 32x32 corner. (If
-// the PAL border padding in docs/SPEED_PLAN.md step 8 is added, the V
-// values move down by 25.)
+// used h in [372,403], v in [43,74] for the top-right 32x32 corner with
+// NTSC timing. (With PAL=1 (below), as now, the V values are 23 lines further down:
+// V2_TOP_BORDER=66, V2_VIDEO=258 - see mc6847pace.vhd's PAL_PAD.)
     wire [8:0]  dragon_h_count, dragon_v_count;
     wire        fb_overlay_en    = 1'b0;
     wire [23:0] fb_overlay_color = 24'h000000;
 
-dragoncoco dragon (
+// PAL=1: UK Dragon 32 50 Hz frame timing (309-line frames, 49.93 Hz) -
+// see mc6847pace.vhd's PAL_PAD and docs/SPEED_PLAN.md step 8.
+dragoncoco #(
+    .PAL ( 1 )
+) dragon (
     .clk            ( clk_dragon ),
     .turbo          ( 1'b0 ),
     .trig_reset_n   ( reset_n_dragon ),
