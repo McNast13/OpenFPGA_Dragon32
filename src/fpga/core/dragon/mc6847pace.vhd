@@ -9,7 +9,11 @@ entity mc6847pace  is
 		T1_VARIANT      : boolean := false;
 		CHAR_ROM_FILE	  : string := "mc6847_ntsc.hex";
 		
-    CVBS_NOT_VGA    : boolean := true
+    CVBS_NOT_VGA    : boolean := true;
+    -- UK/PAL Dragon frame timing (1) or NTSC (0): pads the top and bottom
+    -- borders so a frame is 309 lines instead of 263 - see PAL_PAD below.
+    -- integer rather than boolean so a Verilog parent can set it plainly.
+    PAL             : integer := 0
 	);
 	port
 	(
@@ -96,9 +100,23 @@ architecture SYN of mc6847pace is
   constant V2_FRONT_PORCH      : integer := 2;
   constant V2_VERTICAL_SYNC    : integer := V2_FRONT_PORCH + 2;
   constant V2_BACK_PORCH       : integer := V2_VERTICAL_SYNC + 12;
-  constant V2_TOP_BORDER       : integer := V2_BACK_PORCH + 27; -- + 25;  -- +25 for PAL
+  -- PAL padding. A real UK Dragon uses this same NTSC-only VDG and makes
+  -- 50 Hz by stretching the borders with blank lines (262 -> 312 lines,
+  -- hence the original "+25 for PAL" note here). This implementation's
+  -- lines are 464 cvbs_clk_ena ticks (7.159 MHz) = 64.81 us, not the real
+  -- chip's 456, and a frame is V2_TOTAL_PER_FIELD+1 lines (v_count runs
+  -- 0..V2_TOTAL_PER_FIELD) - 263 lines = 58.67 Hz for NTSC. So the pad is
+  -- chosen for the frame *rate*, not copied from the real line count:
+  -- +23 top and bottom = 309 lines = 20.03 ms = 49.93 Hz (real UK Dragon:
+  -- 49.97 Hz). FS (fs_n = not cvbs_vblank) follows, so the 50 Hz IRQ
+  -- that TIMER/PLAY/games count does too. The SAM resets its video
+  -- address on every HS while DA0 is high (all non-active lines), so the
+  -- extra lines don't disturb it.
+  constant PAL_PAD             : integer := 23 * PAL;  -- PAL is 0 or 1
+
+  constant V2_TOP_BORDER       : integer := V2_BACK_PORCH + 27 + PAL_PAD;
   constant V2_VIDEO            : integer := V2_TOP_BORDER +  192;
-  constant V2_BOTTOM_BORDER    : integer := V2_VIDEO + 27; -- + 25;       -- +25 for PAL
+  constant V2_BOTTOM_BORDER    : integer := V2_VIDEO + 27 + PAL_PAD;
   constant V2_TOTAL_PER_FIELD  : integer := V2_BOTTOM_BORDER;
 
   -- internal version of control ports

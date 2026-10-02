@@ -1382,3 +1382,14 @@ Installed the CI build of the speed branch (timing met, +1.268 ns setup,
 M10K 308/308). User confirms it works as expected on real hardware
 (speed, sound, tape). Merged into `main`. Still NTSC 60 Hz timing - UK
 50 Hz is `docs/SPEED_PLAN.md` step 8.
+
+## 2026-10-02 — UK 50 Hz frame timing (SPEED_PLAN step 8) — works
+
+`PAL` parameter (mc6847pace generic via dragoncoco, set to 1 in
+core_top): +23 border lines top and bottom, 263 -> 309 lines = 49.93 Hz.
+Found along the way: this VDG's lines are 464 ticks (64.81 us), not the
+real chip's 456, so the NTSC timing had actually been 58.67 Hz, not 59.94
+- and the real Dragon's +25/+25 would have given 49.3 Hz here, hence 23.
+CI build timing met (+0.676 ns - tighter than the previous +1.268 ns,
+fitter variation; untouched paths), M10K 308/308. Hardware: `PRINT
+TIMER` over 10 s ≈ 500 (was ≈ 600) - confirmed 50 Hz. Merged to `main`.
