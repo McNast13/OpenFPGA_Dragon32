@@ -1268,3 +1268,41 @@ is the one broken thing) with crunched CLOAD confirmed working. If it
 something shared by `CLOAD` generically (both sub-modes), not ASCII
 specifically - worth distinguishing clearly by testing `LIST`/`RUN`
 result carefully once more.
+
+## 2026-10-02 — hardware test (corrected test_crunched.cas) - still empty; root cause found in the ROM
+
+Re-tested the `$1E01`-corrected `test_crunched.cas`: `CLOAD` → `OK`,
+`LIST` → nothing. So the wrong address wasn't the (only) problem, and
+the failure is shared by both CLOAD sub-modes.
+
+**Root cause, confirmed by disassembling the real Dragon 32 ROM**
+(`d32.rom`): the ROM's tape "motor on" routine at `$BDCF` sets PIA1 CRA
+bit 3 (motor relay) and then immediately spins in a delay loop (`LDX $95`
+/ `LEAX -1,X` / `BNE`, 8 cycles/iteration; `$95` is initialised to
+`$DA5C` from the ROM's init table at `$BBA5`) - ~447k CPU cycles, about
+0.5s of tape at real speed - *before* it starts looking for a sync byte.
+The block-read entry at `$BDE5` (`ORCC #$50`, `BSR` motor-on, then the
+sync search) is used for every block after the filename. That delay
+exists to let a real deck get up to speed, and real `CSAVE` output always
+has a leader in front of the data block to soak it up.
+
+`test.cas`/`test_crunched.cas` had *no* leader before the data block
+(removed on 2026-09-27 on a wrong reading of the disassembly). And
+`cas_player.sv` correctly runs whenever the motor is on - so during that
+0.5s spin, the whole ~0.25s data block played out with nobody listening.
+The first sync the ROM then found was in an EOF block → `CLOAD` returns
+`OK` with nothing loaded. This also explains the whole earlier EOF saga:
+with one EOF block it skipped past it too and wrapped into the header
+(`?IO ERROR`); 10 wasn't enough; 200 left it landing on an EOF block.
+None of that was "CLOAD retrying" - it was the tape running during the
+motor-on delay. The ASCII-vs-crunched theory was a red herring.
+
+Fix (test files only, no RTL change): both generators now emit a second
+leader between the filename and data blocks, and both leaders are 256
+bytes (~1.3s, comfortably > the 0.5s delay). `test.cas` 1396 → 1780
+bytes, `test_crunched.cas` 1392 → 1776. The 200 EOF blocks are left in
+for now (harmless) - can be trimmed once loading is confirmed.
+
+Implication for real software: real `.cas` dumps of commercial tapes
+include proper leaders, so this doesn't affect them - JSW's
+reaching-its-loading-screen-then-sticking is a separate question.

@@ -74,7 +74,7 @@ def basic_line(line_number, token_bytes, next_addr):
 
 
 def build():
-    leader = bytes([0x55] * 128)
+    leader = bytes([0x55] * 256)
 
     filename = b"TESTC   "  # 8 chars, space-padded - distinct name from test.cas
     fn_data = list(filename) + [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]  # BASIC CRUNCHED row
@@ -96,7 +96,7 @@ def build():
     eof_block = block(0xFF, [])
     trailing_eofs = eof_block * 200
 
-    return leader + filename_block + data_block + trailing_eofs
+    return leader + filename_block + leader + data_block + trailing_eofs  # second leader: see generate_test_cas.py
 
 
 if __name__ == "__main__":

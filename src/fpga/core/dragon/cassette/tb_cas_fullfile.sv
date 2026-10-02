@@ -14,7 +14,7 @@
 // with: xxd -p testdata/test.cas | tr -d '\n' | fold -w2 > testdata/test_cas_bytes.hex
 // - and update FILE_LEN below to match)
 module tb_cas_fullfile;
-    localparam FILE_LEN = 1396;
+    localparam FILE_LEN = 1780;
 
     reg clk = 0;
     always #10 clk = ~clk;
