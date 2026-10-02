@@ -1343,3 +1343,33 @@ Installed CI build of `e200439` (timing met, M10K still 308/308).
 `SOUND 89,30` plays a tone on real hardware - audio path confirmed.
 (Pitch expected ~2 octaves low at current 1/4 machine speed - see
 `docs/SPEED_PLAN.md`.)
+
+## 2026-10-02 — real speed: timing closes at 57.272727 MHz (branch speed/step1-timing-report)
+
+`docs/SPEED_PLAN.md` steps 1-3. Added `tools/timing_report.tcl` + a CI step
+that writes per-path reports, set `dragon_pll` back to 57.272727 MHz, then
+added multicycle constraints one layer at a time, reading the report each
+time:
+
+| Build | Worst setup slack | TNS | What failed |
+|---|---|---|---|
+| none | -10.276 | -12592.8 | 6809 reg -> 6809 reg, full-cycle, ~27 ns logic |
+| + CPU internal (setup 4) | -8.321 | -9187.4 | 6809 reg -> ram1/pia/pia1, half-cycle (negedge->posedge), ~16 ns |
+| + CPU outputs (setup 2) | -1.702 | -48.7 | read-data latches (ram_dout, rom8/romC/pia/pia1 _dout2) -> 6809 |
+| + read latches (setup 3) | **+1.804** | 0 | - (hold +0.205, all corners pass) |
+
+The earlier "~36 MHz ceiling" conclusion was wrong: it was missing
+constraints, not a slow part. Why each number is what it is, including
+the cases that must NOT be relaxed (`e_r`/`q_r`, the SAM fast-mode
+1.5-period budget for PIA read strobes), is written next to each
+constraint in `core_constraints.sdc`. Correction to the plan: my "half-
+cycle paths" guess was wrong for the worst layer (full-cycle), right for
+the second.
+
+Also step 2 cleanup: removed the cassette diagnostic square (overlay
+ports kept, tied off, for the on-screen keyboard) and the unused 90°
+Dragon clock.
+
+Simulation can't validate this (it's clock-rate independent) - the
+timing report is the check, then hardware: `PRINT TIMER` over 10 s,
+`SOUND` pitch, tape load times, JSW.
