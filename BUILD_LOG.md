@@ -1306,3 +1306,17 @@ for now (harmless) - can be trimmed once loading is confirmed.
 Implication for real software: real `.cas` dumps of commercial tapes
 include proper leaders, so this doesn't affect them - JSW's
 reaching-its-loading-screen-then-sticking is a separate question.
+
+## 2026-10-02 — hardware test (second leader) — CASSETTE LOADING WORKS
+
+`test.cas` (ASCII): `CLOAD` → `OK`, `LIST` shows both lines exactly.
+**First successful BASIC tape load on this core.** Confirms the
+missing-leader diagnosis above.
+
+`test_crunched.cas`: loads, but `LIST` shows only line 10. A bug in the test
+file, not the core: the generator gave the last line a link of `0000`, but
+in this BASIC a zero link *is* the end-of-program marker (the program ends
+with a separate `00 00` after the last line), so line 20 was treated as
+the end and never listed. Fixed the generator (line 20 now links to
+`$1E26`, followed by `00 00`), regenerated (1778 bytes). Waiting for a
+hardware retest.

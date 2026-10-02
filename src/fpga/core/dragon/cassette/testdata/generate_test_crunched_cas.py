@@ -87,10 +87,17 @@ def build():
     line1_len = 2 + 2 + len(line1_tokens) + 1  # next_addr + line_num + tokens + terminator
     line2_addr = TXTTAB + line1_len
 
-    line1 = basic_line(10, line1_tokens, next_addr=line2_addr)
-    line2 = basic_line(20, line2_tokens, next_addr=0x0000)  # 0x0000 = end of program
+    line2_len = 2 + 2 + len(line2_tokens) + 1
+    end_addr = line2_addr + line2_len
 
-    program = line1 + line2
+    line1 = basic_line(10, line1_tokens, next_addr=line2_addr)
+    line2 = basic_line(20, line2_tokens, next_addr=end_addr)
+
+    # End of program is a separate 00 00 link *after* the last line, not
+    # the last line's own link being zero - a line whose link is 0 IS the
+    # end marker and never gets listed/run (2026-10-02 hardware test: an
+    # earlier version did that and LIST showed only line 10).
+    program = line1 + line2 + bytes([0x00, 0x00])
     data_block = block(0x01, list(program))
 
     eof_block = block(0xFF, [])
