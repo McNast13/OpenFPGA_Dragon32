@@ -947,8 +947,9 @@ dragoncoco #(
 // per Analogue's published specs) showed random static/no pattern, since
 // the real ~15Hz frame rate is below what its scaler can achieve sync
 // lock on at all. video_frame_buffer.sv captures each real pixel at its
-// native rate and re-scans it out at a clean, fixed ~46Hz instead - see
-// that file for the full writeup.
+// native rate and re-scans it out with clean timing at exactly the
+// Dragon's 49.93Hz, frame-locked (from clk_dragon/16) - see that file
+// for the full writeup.
 wire        video_dot_clk, video_dot_clk_90;
 wire [23:0] video_fb_rgb;
 wire        video_fb_de, video_fb_hsync, video_fb_vsync;
@@ -966,8 +967,6 @@ video_frame_buffer vid_fb (
     .wr_overlay_en    ( fb_overlay_en ),
     .wr_overlay_color ( fb_overlay_color ),
 
-    .rd_ref_clk     ( clk_core_12288 ),
-    .rd_ref_clk_90  ( clk_core_12288_90deg ),
     .dot_clk        ( video_dot_clk ),
     .dot_clk_90     ( video_dot_clk_90 ),
     .rd_rgb         ( video_fb_rgb ),

@@ -14,15 +14,14 @@
 // achieving sync lock at a refresh rate that low.
 //
 // The fix: write every real Dragon pixel into a small frame buffer at its
-// own native (slow) rate, and continuously re-scan that buffer out to the
-// scaler on a separate, clean, fixed-rate clock (~46Hz here - comfortably
-// inside the 30-62Hz window with margin both ways) derived from
-// clk_core_12288 (already present in core_top.v for other purposes,
-// previously unused for video - this is exactly what phase 0's original
-// template test-pattern generator used before real Dragon video replaced
-// it). The displayed image still only *updates* ~15 times a second (same
-// as before - we're not making the machine itself faster), but the
-// scaler now always sees a normal, lockable refresh rate.
+// own native rate, and continuously re-scan that buffer out to the scaler
+// with its own clean, regular timing.
+//
+// Since SPEED_PLAN steps 1-4 and 8 the machine runs at real speed with
+// UK 50 Hz frames (49.93 Hz), so the read side now runs at exactly the
+// Dragon's frame rate and is frame-locked to it (SPEED_PLAN step 6) - see
+// the read-side comment below. It used to free-run at ~46 Hz from
+// clk_core_12288, which dropped frames and tore.
 //
 // This mirrors the sibling OpenFPGA_ZX-Spectrum project's own approach
 // (video_rgb_clock driven from a derived/gated pix_clk, not a raw PLL
@@ -51,11 +50,9 @@ module video_frame_buffer (
     input  wire        wr_overlay_en,
     input  wire [23:0] wr_overlay_color,
 
-    // read side - scaler output, fixed-rate. dot_clk (~3.072MHz, derived
-    // from rd_ref_clk/4 below) is also the video_rgb_clock the scaler
-    // should be given - see core_top.v's instantiation.
-    input  wire        rd_ref_clk,   // clk_core_12288 - free-running, clean PLL output
-    input  wire        rd_ref_clk_90,// clk_core_12288_90deg - same freq, 90 degrees offset
+    // read side - scaler output. dot_clk (wr_clk/16, ~3.58MHz, below) is
+    // also the video_rgb_clock the scaler should be given - see
+    // core_top.v's instantiation.
     output wire        dot_clk,
     output wire        dot_clk_90,
     output wire [23:0] rd_rgb,
@@ -79,11 +76,18 @@ module video_frame_buffer (
     reg [15:0] fb_wraddr;
     reg [23:0] fb_wrdata;
 
+    // Toggles as the first pixel of each frame's first active line is
+    // written - the read side's frame lock (below) watches for it.
+    reg        wr_frame_tgl = 1'b0;
+
     always @(posedge wr_clk) begin
         wr_pixel_en_prev <= wr_pixel_en;
         wr_de_prev       <= wr_de;
         wr_vsync_prev    <= wr_vsync;
         fb_wren          <= 1'b0;
+
+        if (wr_de && ~wr_de_prev && wr_y == 9'd0)
+            wr_frame_tgl <= ~wr_frame_tgl;
 
         if (~wr_de) begin
             wr_x <= 9'd0;
@@ -102,38 +106,73 @@ module video_frame_buffer (
     end
 
     // ------------------------------------------------------------------
-    // Read side: fixed-rate 256x192 active area scan-out. Totals chosen
-    // so that dot_clk (rd_ref_clk/4) * H_TOTAL * V_TOTAL lands well inside
-    // the Pocket's built-in screen's documented 30-62Hz range:
-    //   dot_clk = 12.288MHz / 4 = 3.072MHz
-    //   refresh = 3.072MHz / (320 * 210) = ~45.7Hz
+    // Read side: 256x192 active area scan-out at exactly the Dragon's
+    // frame rate, frame-locked to the write side.
+    //   dot_clk = wr_clk / 16 = 57.272727MHz / 16 = 3.5795MHz
+    //   line    = 348 dots = 97.22 us
+    //   frame   = 206 lines = 71,688 dots = 1,147,008 wr_clk cycles
+    // A PAL Dragon frame is 309 lines x 464 ticks x 8 wr_clk cycles =
+    // 1,147,008 wr_clk cycles too, so once locked every frame is exactly
+    // 206 lines, forever. (A first version ran from clk_core_12288 and
+    // kept up by making one frame in ~50 a line shorter; the scaler
+    // blanked a frame each time, about once a second, docked and undocked.)
+    //
+    // Lock: a frame ends at the first line boundary after the write side
+    // starts a new frame (wr_frame_tgl), as long as we're in its last two
+    // lines; pulses earlier than that are ignored and the frame runs to
+    // V_MAX. From power-on (or reset) that settles within ~10 frames, and
+    // from then on the pulse arrives at the same point of line 205 every
+    // frame. Only those settling frames differ in length.
+    //
+    // No tearing: our line 0 starts 0-1 lines after the Dragon's first
+    // active line does, and both our lines (97.2 us vs 64.8 us) and our
+    // pixels (0.28 us vs 0.14 us) are slower than the Dragon's, so the read
+    // stays behind the write all frame and shows each frame whole.
+    //
+    // NTSC (PAL=0) frames are 263 x 464 x 8 - this would need different
+    // totals (and the lock would not hold) if PAL is ever made switchable.
     // ------------------------------------------------------------------
-    localparam H_ACTIVE = 256, H_FRONT = 8, H_SYNC = 32, H_BACK = 24;
-    localparam H_TOTAL  = H_ACTIVE + H_FRONT + H_SYNC + H_BACK; // 320
-    localparam V_ACTIVE = 192, V_FRONT = 4, V_SYNC = 4, V_BACK = 10;
-    localparam V_TOTAL  = V_ACTIVE + V_FRONT + V_SYNC + V_BACK; // 210
+    localparam H_ACTIVE = 256, H_FRONT = 16, H_SYNC = 32, H_BACK = 44;
+    localparam H_TOTAL  = H_ACTIVE + H_FRONT + H_SYNC + H_BACK; // 348
+    localparam V_ACTIVE = 192, V_FRONT = 4, V_SYNC = 4;
+    localparam V_TOTAL  = 206;  // 49.93 Hz - H_TOTAL * V_TOTAL * 16 = one Dragon frame
+    localparam V_MAX    = 230;  // 44.72 Hz, only while settling or in reset
 
-    reg [1:0] dot_div = 2'd0;
-    always @(posedge rd_ref_clk) dot_div <= dot_div + 2'd1;
-    assign dot_clk = dot_div[1];
+    // dot_clk rises as dot_div goes 7 -> 8; dot_clk_90 rises 4 wr_clk
+    // cycles (90 degrees) later, as it goes 11 -> 12. Both registered, so
+    // glitch-free.
+    reg [3:0] dot_div = 4'd0;
+    reg       dot_clk_90_r = 1'b0;
+    always @(posedge wr_clk) begin
+        dot_div <= dot_div + 4'd1;
+        if (dot_div == 4'd11)     dot_clk_90_r <= 1'b1;
+        else if (dot_div == 4'd3) dot_clk_90_r <= 1'b0;
+    end
+    assign dot_clk    = dot_div[3];
+    assign dot_clk_90 = dot_clk_90_r;
 
-    // Same division ratio, counted from the PLL's own 90-degree-shifted
-    // output - since both PLL outputs are phase-locked at the same
-    // frequency, this gives a genuine 90-degree-shifted dot_clk_90 rather
-    // than reusing dot_clk for both (unlike the old dragon_vclk-based
-    // video_rgb_clock_90, which had no true phase partner available).
-    reg [1:0] dot_div_90 = 2'd0;
-    always @(posedge rd_ref_clk_90) dot_div_90 <= dot_div_90 + 2'd1;
-    assign dot_clk_90 = dot_div_90[1];
+    // wr_frame_tgl crosses into dot_clk: two-flop synchroniser, then an
+    // edge sets frame_pending until the current frame ends.
+    reg [2:0] frame_tgl_sync = 3'd0;
+    reg       frame_pending = 1'b0;
 
     reg [8:0] h_cnt = 9'd0, v_cnt = 9'd0;
+    wire      frame_end = (v_cnt >= V_TOTAL - 2) && (frame_pending || v_cnt == V_MAX - 1);
+
     always @(posedge dot_clk) begin
+        frame_tgl_sync <= {frame_tgl_sync[1:0], wr_frame_tgl};
+
         if (h_cnt == H_TOTAL - 1) begin
             h_cnt <= 9'd0;
-            v_cnt <= (v_cnt == V_TOTAL - 1) ? 9'd0 : v_cnt + 9'd1;
+            v_cnt <= frame_end ? 9'd0 : v_cnt + 9'd1;
         end else begin
             h_cnt <= h_cnt + 9'd1;
         end
+
+        if (frame_tgl_sync[2] != frame_tgl_sync[1] && v_cnt >= V_TOTAL - 2)
+            frame_pending <= 1'b1;
+        else if (h_cnt == H_TOTAL - 1 && frame_end)
+            frame_pending <= 1'b0;
     end
 
     wire de    = (h_cnt < H_ACTIVE) && (v_cnt < V_ACTIVE);
