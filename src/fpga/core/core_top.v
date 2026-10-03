@@ -821,10 +821,22 @@ synch_3 #(.WIDTH(32)) s_cont2_joy (cont2_joy, cont2_joy_s, clk_dragon);
 // (fire) - cont1_key_game is what the joystick sees.
     wire        osd_active;
     wire [31:0] cont1_key_game = osd_active ? (cont1_key_s & ~32'h0000_001F) : cont1_key_s;
-    wire [7:0] joy1_x = cont1_key_game[3] ? 8'd255 : cont1_key_game[2] ? 8'd0 : cont1_joy_s[7:0];
-    wire [7:0] joy1_y = cont1_key_game[1] ? 8'd255 : cont1_key_game[0] ? 8'd0 : cont1_joy_s[15:8];
-    wire [7:0] joy2_x = cont2_key_s[3] ? 8'd255 : cont2_key_s[2] ? 8'd0 : cont2_joy_s[7:0];
-    wire [7:0] joy2_y = cont2_key_s[1] ? 8'd255 : cont2_key_s[0] ? 8'd0 : cont2_joy_s[15:8];
+//
+// The analog stick is only read from a controller that has one: key[31:28]
+// (APF controller type) = 3, docked controller with analog. The Pocket's
+// built-in controls (type 1) report a stick of 0 = hard left/up, which
+// made the joystick drift left whenever the Pocket was undocked; anything
+// without a stick reads as centred, d-pad only.
+    wire       cont1_analog = (cont1_key_s[31:28] == 4'h3);
+    wire       cont2_analog = (cont2_key_s[31:28] == 4'h3);
+    wire [7:0] stick1_x = cont1_analog ? cont1_joy_s[7:0]  : 8'd128;
+    wire [7:0] stick1_y = cont1_analog ? cont1_joy_s[15:8] : 8'd128;
+    wire [7:0] stick2_x = cont2_analog ? cont2_joy_s[7:0]  : 8'd128;
+    wire [7:0] stick2_y = cont2_analog ? cont2_joy_s[15:8] : 8'd128;
+    wire [7:0] joy1_x = cont1_key_game[3] ? 8'd255 : cont1_key_game[2] ? 8'd0 : stick1_x;
+    wire [7:0] joy1_y = cont1_key_game[1] ? 8'd255 : cont1_key_game[0] ? 8'd0 : stick1_y;
+    wire [7:0] joy2_x = cont2_key_s[3] ? 8'd255 : cont2_key_s[2] ? 8'd0 : stick2_x;
+    wire [7:0] joy2_y = cont2_key_s[1] ? 8'd255 : cont2_key_s[0] ? 8'd0 : stick2_y;
 
 // On-screen keyboard (Select toggles it) - see dragon/osd/osd_keyboard.sv.
 // It draws through video_frame_buffer.sv's wr_overlay_en/wr_overlay_color,

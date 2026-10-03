@@ -1504,3 +1504,15 @@ OSD: fitter placement shifted with the extra logic), hold +0.204 ns, all
 TNS 0. ALMs 28% (was 26%), M10K 308/308 unchanged. No new critical
 warnings (same 11 in map as before). Not installed yet - awaiting go-ahead.
 Installed on the SD card, all files MD5-verified (bitstream.rbf_r b506c706...). Awaiting hardware test.
+
+### Hardware test (OSD build) — OSD works; joystick drifts left undocked — fixed
+
+User: on-screen keyboard and the `*`/`+`/`=` fix all as expected, but
+undocked the joystick reads as d-pad-left held (character keeps moving
+left); a docked controller is fine. Pre-existing since joystick support
+(82a870d): with no d-pad pressed, the axis came straight from
+`cont1_joy`, and the Pocket's built-in controls have no stick - they
+report 0 = hard left (and up). Fix: only use the analog stick when the
+controller type (key[31:28]) is 3, docked controller with analog
+(numbering consistent with apf2hid's keyboard = 4); otherwise centre
+(128), d-pad only.
