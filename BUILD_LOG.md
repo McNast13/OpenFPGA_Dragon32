@@ -1596,3 +1596,7 @@ read $FF and its NMI/HALT/FIRQ are tied off. Net 308 -> ~307.
 Test cartridge: dragon/cartridge/testdata/gen_test_cart.py builds
 test_cart.rom (8K, original hand-assembled 6809): clears the screen and
 prints CARTRIDGE OK.
+
+CI build (run 37147388296): timing met - clk_dragon setup +1.524 ns,
+hold +0.211 ns, vid_dot_clk fine. romC now a full 16 M10K; M10K 307/308
+(floppy controller gone); ALMs 22% (was 28%). Not yet installed.
