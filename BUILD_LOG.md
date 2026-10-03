@@ -1540,3 +1540,10 @@ core_constraints.sdc declares vid_dot_clk / vid_dot_clk_90 as generated
 clocks (clk_dragon/16) in the dp1 clock group, so these paths are now
 timed. Frame-lock sim still clean (206-line frames, nothing torn,
 misplaced, repeated or skipped).
+
+CI build (run 37133478676): timing met. vid_dot_clk now a real
+generated clock (3.58 MHz) and its paths are timed: setup +13.9 ns, hold
++0.923 ns (fast corner +0.299 ns); the "without an associated clock
+assignment" warnings for the frame buffer are gone. clk_dragon setup
++2.044 ns. Installed on the card (12 files MD5-verified, bitstream
+b510e2fd...). Awaiting hardware test.
