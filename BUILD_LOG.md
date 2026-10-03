@@ -1520,3 +1520,23 @@ controller type (key[31:28]) is 3, docked controller with analog
 CI build (run 37125989087): timing met, clk_dragon setup +1.194 ns, hold
 +0.209 ns, M10K 308/308. Installed on the card (all 12 files
 MD5-verified, bitstream c5a04811...). Awaiting hardware test.
+
+### Hardware test (joystick-fix build) — blank screen; picture only with OSD open, flickering docked
+
+The build after an unrelated joystick change came up blank, docked and
+undocked; opening the OSD brought the picture back (flickering when
+docked). Cause, confirmed in the CI timing report: `dot_div[3]` and
+`dot_clk_90_r` were "determined to be a clock but found without an
+associated clock assignment", and dot_div[3] clocks apf_top's video DDIO
+output registers (`ddio_outa...`). The frame buffer launched
+rgb/de/hs/vs from dot_clk's rising edge into registers capturing on that
+same edge, with no timing check - pass or fail depended on each fit's
+routing. (Same hazard since the frame buffer was first added; earlier
+builds just happened to come out right.)
+
+Fix: (1) the frame buffer's outputs now change on dot_clk's falling edge
+- 140 ns either side of the capture edge, whatever the routing; (2)
+core_constraints.sdc declares vid_dot_clk / vid_dot_clk_90 as generated
+clocks (clk_dragon/16) in the dp1 clock group, so these paths are now
+timed. Frame-lock sim still clean (206-line frames, nothing torn,
+misplaced, repeated or skipped).

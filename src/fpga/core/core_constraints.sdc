@@ -4,6 +4,18 @@
 # put your clock groups in here as well as any net assignments
 #
 
+# Frame buffer scan-out clocks (video_frame_buffer.sv): clk_dragon / 16,
+# made by a counter, and they clock apf_top's video DDIO output registers.
+# Undeclared, Quartus left every path into those registers untimed - see
+# BUILD_LOG.md 2026-10-03 (blank/flickering picture). dot_clk rises with
+# source edge 1 (period 32 edges); dot_clk_90 4 clk_dragon cycles later.
+create_generated_clock -name vid_dot_clk \
+ -source [get_pins {ic|vid_fb|dot_div[3]|clk}] -divide_by 16 \
+ [get_pins {ic|vid_fb|dot_div[3]|q}]
+create_generated_clock -name vid_dot_clk_90 \
+ -source [get_pins {ic|vid_fb|dot_clk_90_r|clk}] -edges {9 25 41} \
+ [get_pins {ic|vid_fb|dot_clk_90_r|q}]
+
 set_clock_groups -asynchronous \
  -group { bridge_spiclk } \
  -group { clk_74a } \
@@ -12,7 +24,7 @@ set_clock_groups -asynchronous \
  -group { ic|mp1|mf_pllbase_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk } \
  -group { ic|mp1|mf_pllbase_inst|altera_pll_i|general[2].gpll~PLL_OUTPUT_COUNTER|divclk } \
  -group { ic|mp1|mf_pllbase_inst|altera_pll_i|general[3].gpll~PLL_OUTPUT_COUNTER|divclk } \
- -group { ic|dp1|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk }
+ -group { ic|dp1|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk vid_dot_clk vid_dot_clk_90 }
 
 # dragon_pll (ic|dp1) is a second, independent PLL for the Dragon 32 machine
 # clock - its output above was missing from this file entirely until

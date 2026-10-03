@@ -200,9 +200,26 @@ module video_frame_buffer (
         vsync_d1 <= vsync;
     end
 
-    assign rd_de    = de_d1;
-    assign rd_hsync = hsync_d1;
-    assign rd_vsync = vsync_d1;
+    // Outputs change on dot_clk's FALLING edge. apf_top.v's DDIO output
+    // registers capture video_rgb/de/hs/vs on video_rgb_clock's (= dot_clk's)
+    // RISING edge; launching from that same rising edge left a same-edge
+    // race whose outcome depended on routing, and so on each build's fit -
+    // one build came up with a blank/flickering picture from it. Half a
+    // dot (140 ns) either side of the capture edge removes it.
+    reg [23:0] rgb_o = 24'h000000;
+    reg        de_o = 1'b0, hsync_o = 1'b0, vsync_o = 1'b0;
+    wire [23:0] fb_q;
+    always @(negedge dot_clk) begin
+        rgb_o   <= fb_q;
+        de_o    <= de_d1;
+        hsync_o <= hsync_d1;
+        vsync_o <= vsync_d1;
+    end
+
+    assign rd_rgb   = rgb_o;
+    assign rd_de    = de_o;
+    assign rd_hsync = hsync_o;
+    assign rd_vsync = vsync_o;
 
     dpram_1r1w #(49152, 16, 24) fb_ram (
         .wrclock  ( wr_clk ),
@@ -212,7 +229,7 @@ module video_frame_buffer (
 
         .rdclock  ( dot_clk ),
         .rdaddress( fb_rdaddr ),
-        .q        ( rd_rgb )
+        .q        ( fb_q )
     );
 
 endmodule
