@@ -1518,4 +1518,5 @@ controller type (key[31:28]) is 3, docked controller with analog
 (128), d-pad only.
 
 CI build (run 37125989087): timing met, clk_dragon setup +1.194 ns, hold
-+0.209 ns, M10K 308/308. Not yet installed (SD card not mounted).
++0.209 ns, M10K 308/308. Installed on the card (all 12 files
+MD5-verified, bitstream c5a04811...). Awaiting hardware test.
