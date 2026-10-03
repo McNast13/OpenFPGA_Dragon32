@@ -63,6 +63,13 @@ module dragon_keyboard (
     input  wire  [7:0] hid_sc5,
     input  wire  [7:0] hid_sc6,
 
+    // On-screen keyboard (osd_keyboard.sv): one matrix key plus Shift,
+    // ORed in alongside the USB keyboard.
+    input  wire        osd_key_valid,
+    input  wire  [2:0] osd_key_row,
+    input  wire  [2:0] osd_key_col,
+    input  wire        osd_shift,
+
     input  wire  [7:0] addr,      // kb_cols from PIA0 port B (active-low column select)
     output reg   [7:0] kb_rows,   // to PIA0 port A (active-low row readback)
 
@@ -80,17 +87,21 @@ module dragon_keyboard (
 
     // Decodes one USB HID keyboard usage ID (USB HID Usage Tables, an open
     // industry standard - not vendor code) into a Dragon matrix position.
-    // {valid, suppress_shift, row[2:0], col[2:0]}
+    // {valid, force_shift, suppress_shift, row[2:0], col[2:0]}
     //   valid          - this scancode maps to a Dragon key at all
+    //   force_shift    - the symbol is a shifted one on the Dragon but not
+    //                    on the PC key (= + *), so assert Dragon SHIFT
+    //                    even though PC Shift isn't held
     //   suppress_shift - this key's Dragon position already produces the
     //                    shifted symbol on its own (only the ;/: pair
     //                    below), so don't also assert Dragon SHIFT for it
-    function automatic [7:0] hid_to_dragon(input [7:0] sc, input shifted);
+    function automatic [8:0] hid_to_dragon(input [7:0] sc, input shifted);
         reg [2:0] row, col;
-        reg       valid, supp;
+        reg       valid, force_s, supp;
         begin
-            valid = 1'b1;
-            supp  = 1'b0;
+            valid   = 1'b1;
+            force_s = 1'b0;
+            supp    = 1'b0;
             row   = 3'd0;
             col   = 3'd0;
             casez (sc)
@@ -140,6 +151,10 @@ module dragon_keyboard (
                 8'h2A: begin row = 3'd5; col = 3'd5; end // Backspace -> Left (matches Dragon hardware: no dedicated matrix position)
                 8'h2C: begin row = 3'd5; col = 3'd7; end // Space
                 8'h2D: begin row = 3'd1; col = 3'd5; end // -/_ -> Dragon MINUS
+                8'h2E: begin                              // =/+ -> Dragon = is Shift+MINUS, + is Shift+;
+                    if (shifted) begin row = 3'd1; col = 3'd3; end                  // + (PC Shift already held)
+                    else         begin row = 3'd1; col = 3'd5; force_s = 1'b1; end  // =
+                end
                 8'h33: begin                              // ;/: -> Dragon has separate dedicated keys, no shift needed either way
                     if (shifted) begin row = 3'd1; col = 3'd2; supp = 1'b1; end // :
                     else         begin row = 3'd1; col = 3'd3; end             // ;
@@ -147,6 +162,10 @@ module dragon_keyboard (
                 8'h36: begin row = 3'd1; col = 3'd4; end // , -> Dragon COMMA
                 8'h37: begin row = 3'd1; col = 3'd6; end // . -> Dragon FULL_STOP
                 8'h38: begin row = 3'd1; col = 3'd7; end // / -> Dragon SLASH
+
+                // Keypad * and +: the Dragon's * (Shift+:) and + (Shift+;)
+                8'h55: begin row = 3'd1; col = 3'd2; force_s = 1'b1; end // Keypad * -> Dragon *
+                8'h57: begin row = 3'd1; col = 3'd3; force_s = 1'b1; end // Keypad + -> Dragon +
 
                 8'h4C: begin row = 3'd6; col = 3'd1; end // Delete (Fn+Backspace on most keyboards) -> Clear
                 8'h4F: begin row = 3'd5; col = 3'd6; end // Right arrow
@@ -156,15 +175,15 @@ module dragon_keyboard (
 
                 default: valid = 1'b0;
             endcase
-            hid_to_dragon = {valid, supp, row, col};
+            hid_to_dragon = {valid, force_s, supp, row, col};
         end
     endfunction
 
     reg [6:0] pressed [0:7]; // pressed[col][row], active-high while decoding
 
     integer c, r;
-    reg [7:0] d1, d2, d3, d4, d5, d6;
-    reg       any_shift_suppressed;
+    reg [8:0] d1, d2, d3, d4, d5, d6;
+    reg       any_shift_suppressed, any_shift_forced;
 
     always @(*) begin
         d1 = hid_to_dragon(hid_sc1, shift_held);
@@ -177,23 +196,28 @@ module dragon_keyboard (
         for (c = 0; c < 8; c = c + 1)
             pressed[c] = 7'h00;
 
-        if (d1[7]) pressed[d1[2:0]][d1[5:3]] = 1'b1;
-        if (d2[7]) pressed[d2[2:0]][d2[5:3]] = 1'b1;
-        if (d3[7]) pressed[d3[2:0]][d3[5:3]] = 1'b1;
-        if (d4[7]) pressed[d4[2:0]][d4[5:3]] = 1'b1;
-        if (d5[7]) pressed[d5[2:0]][d5[5:3]] = 1'b1;
-        if (d6[7]) pressed[d6[2:0]][d6[5:3]] = 1'b1;
+        if (d1[8]) pressed[d1[2:0]][d1[5:3]] = 1'b1;
+        if (d2[8]) pressed[d2[2:0]][d2[5:3]] = 1'b1;
+        if (d3[8]) pressed[d3[2:0]][d3[5:3]] = 1'b1;
+        if (d4[8]) pressed[d4[2:0]][d4[5:3]] = 1'b1;
+        if (d5[8]) pressed[d5[2:0]][d5[5:3]] = 1'b1;
+        if (d6[8]) pressed[d6[2:0]][d6[5:3]] = 1'b1;
 
         // Suppress Shift only when every currently-held key that cares
         // about shift is one of the self-contained ones (like ;/:) -
         // simplification: suppress whenever *any* held key requests it.
         // A shifted ;/: chorded with an unrelated shifted key at the same
         // instant is rare enough not to matter for typing BASIC.
-        any_shift_suppressed = (d1[7] & d1[6]) | (d2[7] & d2[6]) | (d3[7] & d3[6])
-                              | (d4[7] & d4[6]) | (d5[7] & d5[6]) | (d6[7] & d6[6]);
+        any_shift_suppressed = (d1[8] & d1[6]) | (d2[8] & d2[6]) | (d3[8] & d3[6])
+                              | (d4[8] & d4[6]) | (d5[8] & d5[6]) | (d6[8] & d6[6]);
+        any_shift_forced     = (d1[8] & d1[7]) | (d2[8] & d2[7]) | (d3[8] & d3[7])
+                              | (d4[8] & d4[7]) | (d5[8] & d5[7]) | (d6[8] & d6[7]);
 
-        if (shift_held && !any_shift_suppressed)
+        if ((shift_held && !any_shift_suppressed) || any_shift_forced)
             pressed[7][6] = 1'b1; // Dragon SHIFT: row6 col7
+
+        if (osd_key_valid) pressed[osd_key_col][osd_key_row] = 1'b1;
+        if (osd_shift)     pressed[7][6] = 1'b1;
 
         kb_rows = 8'hFF;
         for (r = 0; r < 7; r = r + 1)

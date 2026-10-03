@@ -6,12 +6,15 @@ module tb_dragon_keyboard;
     reg [7:0] sc1=0, sc2=0, sc3=0, sc4=0, sc5=0, sc6=0;
     reg [7:0] addr = 8'hFF;
     wire [7:0] kb_rows;
+    reg        osd_valid = 0, osd_shift = 0;
+    reg  [2:0] osd_row = 0, osd_col = 0;
 
     dragon_keyboard dut (
         .clk_sys(clk), .reset(1'b0),
         .hid_mod(hid_mod),
         .hid_sc1(sc1), .hid_sc2(sc2), .hid_sc3(sc3),
         .hid_sc4(sc4), .hid_sc5(sc5), .hid_sc6(sc6),
+        .osd_key_valid(osd_valid), .osd_key_row(osd_row), .osd_key_col(osd_col), .osd_shift(osd_shift),
         .addr(addr), .kb_rows(kb_rows),
         .joystick_1_button(1'b0), .joystick_2_button(1'b0), .joystick_hilo(1'b0)
     );
@@ -77,6 +80,43 @@ module tb_dragon_keyboard;
         sc1 = 8'h2A;
         check("Backspace -> Left, col5 selected", 8'b11011111, 8'b01011111);
         sc1 = 0;
+
+        // '=' (0x2E, unshifted) -> Dragon Shift+MINUS: row1 col5 plus forced shift
+        sc1 = 8'h2E;
+        check("= -> MINUS, col5 selected", 8'b11011111, 8'b01111101);
+        check("= -> Dragon shift forced, col7 selected", 8'b01111111, 8'b00111111);
+        sc1 = 0;
+
+        // Shift+'=' -> '+' = Dragon Shift+; (row1 col3), shift from PC Shift
+        hid_mod = 8'h20; // right shift
+        sc1 = 8'h2E;
+        check("Shift+= -> semicolon, col3 selected", 8'b11110111, 8'b01111101);
+        check("Shift+= -> Dragon shift held, col7 selected", 8'b01111111, 8'b00111111);
+        check("Shift+= -> not MINUS, col5 selected", 8'b11011111, 8'b01111111);
+        hid_mod = 0;
+        sc1 = 0;
+
+        // Keypad * (0x55) -> Dragon Shift+: (row1 col2)
+        sc1 = 8'h55;
+        check("KP* -> colon, col2 selected", 8'b11111011, 8'b01111101);
+        check("KP* -> Dragon shift forced, col7 selected", 8'b01111111, 8'b00111111);
+        sc1 = 0;
+
+        // Keypad + (0x57) -> Dragon Shift+; (row1 col3)
+        sc1 = 8'h57;
+        check("KP+ -> semicolon, col3 selected", 8'b11110111, 8'b01111101);
+        check("KP+ -> Dragon shift forced, col7 selected", 8'b01111111, 8'b00111111);
+        sc1 = 0;
+
+        // Released: no stray shift
+        check("All released, col7 selected", 8'b01111111, 8'b01111111);
+
+        // On-screen keyboard: '*' = matrix row1 col2 + shift
+        osd_valid = 1; osd_row = 3'd1; osd_col = 3'd2; osd_shift = 1;
+        check("OSD * -> colon, col2 selected", 8'b11111011, 8'b01111101);
+        check("OSD * -> shift, col7 selected", 8'b01111111, 8'b00111111);
+        osd_valid = 0; osd_shift = 0;
+        check("OSD released, col2 selected", 8'b11111011, 8'b01111111);
 
         if (failures == 0) $display("ALL TESTS PASSED");
         else $display("%0d TEST(S) FAILED", failures);

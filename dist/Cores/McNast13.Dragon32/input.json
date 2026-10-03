@@ -7,8 +7,23 @@
                 "mappings": [
                     {
                         "id": 0,
-                        "name": "Fire",
+                        "name": "Fire / Press key",
                         "key": "pad_btn_a"
+                    },
+                    {
+                        "id": 1,
+                        "name": "Keyboard Shift",
+                        "key": "pad_btn_b"
+                    },
+                    {
+                        "id": 2,
+                        "name": "Keyboard top/bottom",
+                        "key": "pad_btn_x"
+                    },
+                    {
+                        "id": 3,
+                        "name": "On-screen keyboard",
+                        "key": "pad_btn_select"
                     }
                 ]
             }
