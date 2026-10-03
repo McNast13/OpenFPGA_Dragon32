@@ -1600,3 +1600,6 @@ prints CARTRIDGE OK.
 CI build (run 37147388296): timing met - clk_dragon setup +1.524 ns,
 hold +0.211 ns, vid_dot_clk fine. romC now a full 16 M10K; M10K 307/308
 (floppy controller gone); ALMs 22% (was 28%). Not yet installed.
+Installed on the card (12 core files + test_cart.rom in
+Assets/dragon32/common/, all MD5-verified; bitstream 6257b0ee...).
+Awaiting hardware test.
