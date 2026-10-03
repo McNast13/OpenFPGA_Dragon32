@@ -1607,3 +1607,7 @@ Awaiting hardware test.
 ### Hardware test (run 37147388296) — cartridge works
 
 User confirms cartridge loading works on real hardware. Merged to `main`.
+
+## 2026-10-03 — release 1.0.0
+
+core.json version 1.0.0 (cartridges were the last original v1 goal).
