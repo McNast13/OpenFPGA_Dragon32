@@ -1547,3 +1547,8 @@ generated clock (3.58 MHz) and its paths are timed: setup +13.9 ns, hold
 assignment" warnings for the frame buffer are gone. clk_dragon setup
 +2.044 ns. Installed on the card (12 files MD5-verified, bitstream
 b510e2fd...). Awaiting hardware test.
+
+### Hardware test (run 37133478676) — all working
+
+User confirms: picture fine at load docked and undocked, joystick fixed
+undocked, OSD keyboard and `*`/`+`/`=` all working. Merged to `main`.
