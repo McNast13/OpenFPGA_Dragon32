@@ -1497,3 +1497,9 @@ runs `always @(*)` blocks whose inputs don't change after time 0, so
 the tables now use always_comb.
 
 input.json: button names for Select/A/B/X (kept to 19 chars).
+
+CI build (run 37123787609): timing met - clk_dragon setup +0.822 ns
+(worst path is the existing SAM clk_e -> 6809 half-cycle path, not the
+OSD: fitter placement shifted with the extra logic), hold +0.204 ns, all
+TNS 0. ALMs 28% (was 26%), M10K 308/308 unchanged. No new critical
+warnings (same 11 in map as before). Not installed yet - awaiting go-ahead.
