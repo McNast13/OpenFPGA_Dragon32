@@ -1449,3 +1449,8 @@ hold +0.096 ns, all TNS 0; M10K 308/308, ALMs 26%. The 12.288 MHz PLL
 is now optimised away (no longer used). Installed on the SD card,
 all files MD5-verified (bitstream.rbf_r f682fcf1...). Awaiting hardware
 test.
+
+### Hardware test (run 37120070622) — works
+
+User confirms all good on real hardware: no dropouts, docked or
+undocked. Merged to `main`. SPEED_PLAN complete.
