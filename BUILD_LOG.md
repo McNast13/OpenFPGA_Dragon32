@@ -1443,3 +1443,9 @@ MHz PLL stays in core_top (unused by video now).
 Sim (same testbench, 3 s): 230, 209, then 206 lines every frame; pulse
 lands at line 205 dot 52 every frame (well clear of the boundary); 149
 in / 149 out, zero torn/misplaced pixels, dot_clk_90 exactly 90 degrees.
+
+CI build (run 37120070622): timing met - clk_dragon setup +1.614 ns,
+hold +0.096 ns, all TNS 0; M10K 308/308, ALMs 26%. The 12.288 MHz PLL
+is now optimised away (no longer used). Installed on the SD card,
+all files MD5-verified (bitstream.rbf_r f682fcf1...). Awaiting hardware
+test.
