@@ -1454,3 +1454,15 @@ test.
 
 User confirms all good on real hardware: no dropouts, docked or
 undocked. Merged to `main`. SPEED_PLAN complete.
+
+## 2026-10-03 — keyboard: `*`, `+` and `=` now typeable
+
+No key combination produced `*` or `+`: on the Dragon they're Shift+`:`
+and Shift+`;`, but the `;:` key's PC-style mapping uses Shift to pick
+`:`, and the `=+` key wasn't mapped. User chose the minimal fix (keep
+the existing mostly-positional mapping; UK keyboard):
+- `=+` key (HID 0x2E): `=` -> Dragon Shift+MINUS, Shift+`=` -> `+`
+  (Dragon Shift+`;`)
+- keypad `*` (0x55) -> Dragon `*`, keypad `+` (0x57) -> Dragon `+`
+New `force_shift` flag in `hid_to_dragon` asserts Dragon SHIFT when the
+PC key isn't shifted. tb_dragon_keyboard: 23/23 pass (10 new).
