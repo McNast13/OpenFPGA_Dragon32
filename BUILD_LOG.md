@@ -1571,3 +1571,28 @@ main ef8a3f2 - timing met (clk_dragon +2.044 ns, vid_dot_clk hold
 0.9.0. Draft GitHub release v0.9.0 created with the zip attached
 (Dragon32-pocket-core-v0.9.0.zip). User confirmed version and the
 boot.rom path; published as v0.9.0 (tag on ef8a3f2).
+
+## 2026-10-03 — cartridge support (branch `cartridge`)
+
+New data slot 2, "Cartridge" (.rom/.ccc, parameters 11 like the
+cassette). Same two delivery paths as the cassette: bridge writes to the
+slot address 0x20000000 (file picked at launch), or a core-requested
+target_dataslot_read into scratch 0x70000000 (picked from the running
+core) - the cassette's clk_74a state machine now serves both slots,
+clamping a cartridge request to 16K. Bytes go straight into dragoncoco's
+existing romC ($C000-$FEFF) through new cart_wr ports; cart_present
+replaces upstream's ioctl-driven cart_loaded (romC enable + CART line on
+PIA1 CB1, which autostarts the cartridge via FIRQ). Images of 8K or less
+are mirrored into both halves. Every cartridge write restarts a 20 ms
+counter that holds the Dragon in reset (trig_reset_n), so it never runs a
+half-loaded image and comes out of reset with the cartridge in.
+
+Block RAM: romC was already in the design but only half-built (8 M10K -
+it was never written, so Quartus trimmed it); a real 16K needs 16. The
+floppy controller (fdc/wd1793, 9 M10K) is unused with no disk support,
+so dragoncoco gets a DISK parameter (0 here): without it, $FF40-$FF5F
+read $FF and its NMI/HALT/FIRQ are tied off. Net 308 -> ~307.
+
+Test cartridge: dragon/cartridge/testdata/gen_test_cart.py builds
+test_cart.rom (8K, original hand-assembled 6809): clears the screen and
+prints CARTRIDGE OK.

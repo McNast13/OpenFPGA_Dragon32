@@ -633,6 +633,9 @@ data_loader #(
     reg        dataslot_update_74a_prev = 1'b0;
     reg        cas_ready_toggle_74a = 1'b0;
     reg [31:0] cas_loaded_size_74a = 32'd0;
+    // The same state machine serves the Cartridge slot (id 2), into its
+    // own scratch address 0x70000000 (cart_live_data_loader below).
+    reg        load_is_cart = 1'b0;
 
 always @(posedge clk_74a) begin
     dataslot_update_74a_prev <= dataslot_update;
@@ -645,6 +648,16 @@ always @(posedge clk_74a) begin
                 target_dataslot_bridgeaddr <= 32'h60000000;
                 target_dataslot_length     <= dataslot_update_size;
                 cas_loaded_size_74a        <= dataslot_update_size;
+                load_is_cart               <= 1'b0;
+                target_dataslot_read       <= 1'b1;
+                cas_load_state             <= CAS_LOAD_WAIT_ACK;
+            end else if (dataslot_update && !dataslot_update_74a_prev && dataslot_update_id == 16'd2) begin
+                // at most 16K - romC's size; anything beyond is ignored
+                target_dataslot_id         <= 16'd2;
+                target_dataslot_slotoffset <= 32'd0;
+                target_dataslot_bridgeaddr <= 32'h70000000;
+                target_dataslot_length     <= (dataslot_update_size > 32'd16384) ? 32'd16384 : dataslot_update_size;
+                load_is_cart               <= 1'b1;
                 target_dataslot_read       <= 1'b1;
                 cas_load_state             <= CAS_LOAD_WAIT_ACK;
             end
@@ -664,7 +677,8 @@ always @(posedge clk_74a) begin
                 // the same way. cas_loaded_size_74a is plain multi-bit
                 // synchronized below, safe here since it's held stable
                 // from well before this toggle edge until well after.
-                cas_ready_toggle_74a <= ~cas_ready_toggle_74a;
+                if (!load_is_cart)
+                    cas_ready_toggle_74a <= ~cas_ready_toggle_74a;
                 cas_load_state       <= CAS_LOAD_IDLE;
             end
         end
@@ -719,6 +733,85 @@ always @(posedge clk_dragon) begin
     else if (cas_live_new_file)
         cas_len <= cas_loaded_size_dragon[15:0];
 end
+
+// Cartridge (.rom/.ccc) loading - same two delivery paths as the
+// cassette above: plain bridge writes into the slot's own data.json
+// address (0x20000000) when the file is picked as the core launches, or
+// a core-requested read into scratch 0x70000000 (the state machine above)
+// when it's picked from the running core's menu. Bytes go straight into
+// dragoncoco's 16K cartridge ROM (romC, $C000-$FEFF); writes past 16K are
+// dropped. An image of 8K or less is mirrored, as real 8K carts decode.
+//
+// Every cartridge write (re)starts cart_reset_cnt, which holds the Dragon
+// in reset until ~20 ms after the last byte - so it never runs a half-
+// loaded cartridge, and comes out of reset with the new one in, which is
+// what autostarts it (the CART line on PIA1 CB1, as a real cartridge
+// plugged in before power-on). Loading a cassette doesn't reset anything.
+    wire            cart_boot_wr, cart_live_wr;
+    wire    [15:0]  cart_boot_wr_addr, cart_live_wr_addr;
+    wire    [7:0]   cart_boot_wr_data, cart_live_wr_data;
+
+data_loader #(
+    .ADDRESS_MASK_UPPER_4 ( 4'h2 ),
+    .ADDRESS_SIZE         ( 16 ),
+    .WRITE_MEM_CLOCK_DELAY( 4 ),
+    .WRITE_MEM_EN_CYCLE_LENGTH( 1 )
+) cart_boot_data_loader (
+    .clk_74a               ( clk_74a ),
+    .clk_memory             ( clk_dragon ),
+    .bridge_wr              ( bridge_wr ),
+    .bridge_endian_little   ( bridge_endian_little ),
+    .bridge_addr            ( bridge_addr ),
+    .bridge_wr_data         ( bridge_wr_data ),
+    .write_en   ( cart_boot_wr ),
+    .write_addr ( cart_boot_wr_addr ),
+    .write_data ( cart_boot_wr_data )
+);
+
+data_loader #(
+    .ADDRESS_MASK_UPPER_4 ( 4'h7 ),
+    .ADDRESS_SIZE         ( 16 ),
+    .WRITE_MEM_CLOCK_DELAY( 4 ),
+    .WRITE_MEM_EN_CYCLE_LENGTH( 1 )
+) cart_live_data_loader (
+    .clk_74a               ( clk_74a ),
+    .clk_memory             ( clk_dragon ),
+    .bridge_wr              ( bridge_wr ),
+    .bridge_endian_little   ( bridge_endian_little ),
+    .bridge_addr            ( bridge_addr ),
+    .bridge_wr_data         ( bridge_wr_data ),
+    .write_en   ( cart_live_wr ),
+    .write_addr ( cart_live_wr_addr ),
+    .write_data ( cart_live_wr_data )
+);
+
+    wire        cart_any_wr  = cart_boot_wr | cart_live_wr;
+    wire [15:0] cart_any_addr = cart_boot_wr ? cart_boot_wr_addr : cart_live_wr_addr;
+    wire        cart_wr      = cart_any_wr && cart_any_addr < 16'd16384;
+    wire [13:0] cart_wr_addr = cart_any_addr[13:0];
+    wire [7:0]  cart_wr_data = cart_boot_wr ? cart_boot_wr_data : cart_live_wr_data;
+
+    reg         cart_present = 1'b0;
+    reg  [14:0] cart_len = 15'd0;           // highest address written + 1, up to 16K
+    reg  [20:0] cart_reset_cnt = 21'd0;     // 1,145,454 clk_dragon cycles = 20 ms
+    reg         cart_first_wr = 1'b1;       // next write starts a new image
+always @(posedge clk_dragon) begin
+    if (cart_any_wr) begin
+        cart_reset_cnt <= 21'd1_145_454;
+        cart_present   <= 1'b1;
+        if (cart_first_wr) begin
+            cart_len      <= {1'b0, cart_wr_addr} + 15'd1;
+            cart_first_wr <= 1'b0;
+        end else if (cart_wr && {1'b0, cart_wr_addr} + 15'd1 > cart_len)
+            cart_len <= {1'b0, cart_wr_addr} + 15'd1;
+    end else if (cart_reset_cnt != 21'd0) begin
+        cart_reset_cnt <= cart_reset_cnt - 21'd1;
+        if (cart_reset_cnt == 21'd1)
+            cart_first_wr <= 1'b1;
+    end
+end
+    wire        cart_8k = (cart_len <= 15'd8192);
+    wire        cart_loading = (cart_reset_cnt != 21'd0);
 
     wire [15:0] cas_addr;
     wire [7:0]  cas_data;
@@ -877,11 +970,12 @@ osd_keyboard osd (
 // PAL=1: UK Dragon 32 50 Hz frame timing (309-line frames, 49.93 Hz) -
 // see mc6847pace.vhd's PAL_PAD and docs/SPEED_PLAN.md step 8.
 dragoncoco #(
-    .PAL ( 1 )
+    .PAL  ( 1 ),
+    .DISK ( 0 )     // no disk support yet - frees the floppy controller's 9 M10K for the cartridge
 ) dragon (
     .clk            ( clk_dragon ),
     .turbo          ( 1'b0 ),
-    .trig_reset_n   ( reset_n_dragon ),
+    .trig_reset_n   ( reset_n_dragon & ~cart_loading ),   // held in reset while a cartridge loads - see cart_reset_cnt
     .hard_reset     ( 1'b0 ),
     .dragon         ( 1'b1 ),
     .dragon64       ( 1'b0 ),
@@ -936,6 +1030,11 @@ dragoncoco #(
     .ioctl_download ( 1'b0 ),
     .ioctl_wr       ( rom_wr ),
     .ioctl_index    ( 16'h0040 ),
+    .cart_wr        ( cart_wr ),
+    .cart_wr_addr   ( cart_wr_addr ),
+    .cart_wr_data   ( cart_wr_data ),
+    .cart_present   ( cart_present ),
+    .cart_8k        ( cart_8k ),
     .roms_loaded    (  ),
     .roms_reset     ( ~reset_n_dragon ),
 
