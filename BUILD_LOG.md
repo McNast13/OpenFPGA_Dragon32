@@ -1626,3 +1626,8 @@ doesn't matter whether the platform read-modify-writes it (our bridge
 read mux returns 0 there). The write toggles a bit on clk_74a, synch_3'd
 into clk_dragon; an edge clears cart_present and starts the same 20 ms
 Dragon reset as a cartridge load, so the machine comes back up in BASIC.
+
+CI build (run 37158687379): timing met - clk_dragon setup +1.579 ns,
+hold +0.211 ns, vid_dot_clk hold +0.848 ns; M10K 307/308. Installed on
+the card (12 files MD5-verified, bitstream d9db4a20...). Awaiting
+hardware test.
