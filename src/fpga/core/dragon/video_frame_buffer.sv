@@ -14,15 +14,16 @@
 // achieving sync lock at a refresh rate that low.
 //
 // The fix: write every real Dragon pixel into a small frame buffer at its
-// own native (slow) rate, and continuously re-scan that buffer out to the
-// scaler on a separate, clean, fixed-rate clock (~46Hz here - comfortably
-// inside the 30-62Hz window with margin both ways) derived from
-// clk_core_12288 (already present in core_top.v for other purposes,
-// previously unused for video - this is exactly what phase 0's original
-// template test-pattern generator used before real Dragon video replaced
-// it). The displayed image still only *updates* ~15 times a second (same
-// as before - we're not making the machine itself faster), but the
-// scaler now always sees a normal, lockable refresh rate.
+// own native rate, and continuously re-scan that buffer out to the scaler
+// on a separate, clean clock derived from clk_core_12288 (already present
+// in core_top.v for other purposes, previously unused for video - this is
+// exactly what phase 0's original template test-pattern generator used
+// before real Dragon video replaced it).
+//
+// Since SPEED_PLAN steps 1-4 and 8 the machine runs at real speed with
+// UK 50 Hz frames (49.93 Hz), so the read side is frame-locked to the
+// write side (SPEED_PLAN step 6) - see the read-side comment below. It
+// used to free-run at ~46 Hz, which dropped frames and tore.
 //
 // This mirrors the sibling OpenFPGA_ZX-Spectrum project's own approach
 // (video_rgb_clock driven from a derived/gated pix_clk, not a raw PLL
@@ -79,11 +80,18 @@ module video_frame_buffer (
     reg [15:0] fb_wraddr;
     reg [23:0] fb_wrdata;
 
+    // Toggles as the first pixel of each frame's first active line is
+    // written - the read side's frame lock (below) watches for it.
+    reg        wr_frame_tgl = 1'b0;
+
     always @(posedge wr_clk) begin
         wr_pixel_en_prev <= wr_pixel_en;
         wr_de_prev       <= wr_de;
         wr_vsync_prev    <= wr_vsync;
         fb_wren          <= 1'b0;
+
+        if (wr_de && ~wr_de_prev && wr_y == 9'd0)
+            wr_frame_tgl <= ~wr_frame_tgl;
 
         if (~wr_de) begin
             wr_x <= 9'd0;
@@ -102,16 +110,32 @@ module video_frame_buffer (
     end
 
     // ------------------------------------------------------------------
-    // Read side: fixed-rate 256x192 active area scan-out. Totals chosen
-    // so that dot_clk (rd_ref_clk/4) * H_TOTAL * V_TOTAL lands well inside
-    // the Pocket's built-in screen's documented 30-62Hz range:
+    // Read side: 256x192 active area scan-out, frame-locked to the write
+    // side.
     //   dot_clk = 12.288MHz / 4 = 3.072MHz
-    //   refresh = 3.072MHz / (320 * 210) = ~45.7Hz
+    //   line    = 293 dots = 95.38 us
+    //   frame   = 209 or 210 lines (see below) = 49.92-50.16 Hz
+    // The Dragon's PAL frame is 309 x 64.81 us = 20.027 ms = 49.93 Hz,
+    // i.e. 209.98 of our lines. So each frame runs at least V_MIN (209)
+    // lines, then ends at the first line boundary after the write side
+    // starts a new frame (wr_frame_tgl). Frames come out 210 lines with an
+    // occasional 209, and the two sides never drift apart.
+    //
+    // No tearing: our line 0 starts 0-1 lines after the Dragon's first
+    // active line does, and both our lines (95.4 us vs 64.8 us) and our
+    // pixels (0.33 us vs 0.14 us) are slower than the Dragon's, so the read
+    // stays behind the write all frame and shows each frame whole.
+    //
+    // If the toggle stops (machine in reset), frames free-run at V_MAX
+    // lines. NTSC (58.67 Hz) is faster than V_MIN can follow, so with
+    // PAL=0 frames wander between V_MIN and V_MAX - still inside the
+    // Pocket LCD's 30-62Hz window, but this would need retuning for NTSC.
     // ------------------------------------------------------------------
-    localparam H_ACTIVE = 256, H_FRONT = 8, H_SYNC = 32, H_BACK = 24;
-    localparam H_TOTAL  = H_ACTIVE + H_FRONT + H_SYNC + H_BACK; // 320
-    localparam V_ACTIVE = 192, V_FRONT = 4, V_SYNC = 4, V_BACK = 10;
-    localparam V_TOTAL  = V_ACTIVE + V_FRONT + V_SYNC + V_BACK; // 210
+    localparam H_ACTIVE = 256, H_FRONT = 8, H_SYNC = 16, H_BACK = 13;
+    localparam H_TOTAL  = H_ACTIVE + H_FRONT + H_SYNC + H_BACK; // 293
+    localparam V_ACTIVE = 192, V_FRONT = 4, V_SYNC = 4;
+    localparam V_MIN    = 209;  // 50.16 Hz - must stay shorter than a Dragon frame
+    localparam V_MAX    = 230;  // 45.59 Hz free-run when unlocked
 
     reg [1:0] dot_div = 2'd0;
     always @(posedge rd_ref_clk) dot_div <= dot_div + 2'd1;
@@ -126,14 +150,32 @@ module video_frame_buffer (
     always @(posedge rd_ref_clk_90) dot_div_90 <= dot_div_90 + 2'd1;
     assign dot_clk_90 = dot_div_90[1];
 
+    // wr_frame_tgl crosses from wr_clk: two-flop synchroniser, then an
+    // edge sets frame_pending until the current frame ends. Edges before
+    // line V_MIN-1 are ignored, not saved up: honouring a stale one would
+    // end every frame at V_MIN and never lock. Ignoring it stretches that
+    // frame to V_MAX instead, which pulls the next edge ~20 lines earlier,
+    // so from power-on the lock is reached within ~10 frames.
+    reg [2:0] frame_tgl_sync = 3'd0;
+    reg       frame_pending = 1'b0;
+
     reg [8:0] h_cnt = 9'd0, v_cnt = 9'd0;
+    wire      frame_end = (v_cnt >= V_MIN - 1) && (frame_pending || v_cnt == V_MAX - 1);
+
     always @(posedge dot_clk) begin
+        frame_tgl_sync <= {frame_tgl_sync[1:0], wr_frame_tgl};
+
         if (h_cnt == H_TOTAL - 1) begin
             h_cnt <= 9'd0;
-            v_cnt <= (v_cnt == V_TOTAL - 1) ? 9'd0 : v_cnt + 9'd1;
+            v_cnt <= frame_end ? 9'd0 : v_cnt + 9'd1;
         end else begin
             h_cnt <= h_cnt + 9'd1;
         end
+
+        if (frame_tgl_sync[2] != frame_tgl_sync[1] && v_cnt >= V_MIN - 1)
+            frame_pending <= 1'b1;
+        else if (h_cnt == H_TOTAL - 1 && frame_end)
+            frame_pending <= 1'b0;
     end
 
     wire de    = (h_cnt < H_ACTIVE) && (v_cnt < V_ACTIVE);

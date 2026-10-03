@@ -1393,3 +1393,30 @@ real chip's 456, so the NTSC timing had actually been 58.67 Hz, not 59.94
 CI build timing met (+0.676 ns - tighter than the previous +1.268 ns,
 fitter variation; untouched paths), M10K 308/308. Hardware: `PRINT
 TIMER` over 10 s ≈ 500 (was ≈ 600) - confirmed 50 Hz. Merged to `main`.
+
+## 2026-10-03 — frame buffer output locked to 50 Hz (SPEED_PLAN step 6)
+
+`video_frame_buffer.sv` read side no longer free-runs at ~46 Hz (which
+dropped ~4 of every 50 frames and tore at a drifting line). Lines are now
+293 dots (95.38 us) and each frame is frame-locked to the Dragon: it runs
+at least 209 lines, then ends at the first line boundary after the write
+side's first active pixel of a new frame (a toggle, 2-flop synchronised
+into dot_clk). Dragon frame = 209.98 of our lines, so frames come out 210
+with an occasional 209 (49.92/50.16 Hz). Because our lines and pixels are
+both slower than the Dragon's, the read always trails the write: every
+frame is shown whole, once, with no tear.
+
+First attempt held onto a pulse that arrived mid-frame and ended every
+frame at 209 - never locked (caught in sim). Fix: only accept the pulse
+from line 208 on; an ignored one stretches the frame to 230 lines, which
+pulls into lock within a few frames.
+
+Verified in simulation (iverilog, ad hoc testbench in the session
+scratchpad: real 57.27 MHz / 12.288 MHz clocks, 464-tick x 309-line
+Dragon model stamping each pixel with its frame number), 3 s simulated:
+locked by frame 3 (230, 217, then 210...), 149 frames out for 149 in,
+zero torn pixels, zero misplaced pixels, no repeated or skipped frames.
+
+NTSC (PAL=0, 58.67 Hz) is faster than this can follow - it would wander
+between 209 and 230 lines. Needs retuning if the PAL/NTSC menu option
+is ever added.
