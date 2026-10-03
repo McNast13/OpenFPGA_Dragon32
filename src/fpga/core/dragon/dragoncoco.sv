@@ -2,7 +2,9 @@
 
 // todo: find a better name
 module dragoncoco #(
-  parameter PAL = 0   // 1 = UK/PAL 50 Hz frame timing, 0 = NTSC - see mc6847pace.vhd
+  parameter PAL = 0,  // 1 = UK/PAL 50 Hz frame timing, 0 = NTSC - see mc6847pace.vhd
+  parameter DISK = 0  // 1 = build the floppy controller (fdc/wd1793 - 9 M10K); 0 = none,
+                      // $FF40-$FF5F read as $FF. No disk support on the Pocket yet.
 )(
   input clk, // 57.272727 mhz
   input turbo,
@@ -71,6 +73,16 @@ module dragoncoco #(
   input ioctl_download,
   input ioctl_wr,
   input [15:0] ioctl_index,
+  // Cartridge ROM (core_top's Cartridge data slot) - writes straight into
+  // romC alongside the ioctl path. cart_present plays the role of the
+  // upstream cart_loaded (enables romC, drives the CART line on PIA1 CB1);
+  // cart_8k mirrors an 8K cartridge into both halves of $C000-$FEFF, as
+  // real 8K cartridges decode.
+  input        cart_wr,
+  input [13:0] cart_wr_addr,
+  input  [7:0] cart_wr_data,
+  input        cart_present,
+  input        cart_8k,
   output [3:0] roms_loaded,
   input roms_reset,
 
@@ -385,16 +397,18 @@ end
   
 wire load_cart = ioctl_index[5:0] == 1;
 
+wire cart_in = cart_loaded | cart_present;
+
 dpram #(.addr_width_g(14), .data_width_g(8)) romC(
   .clock_a(clk),
-  .address_a(cpu_addr[13:0]),
+  .address_a({cpu_addr[13] & ~cart_8k, cpu_addr[12:0]}),
   .q_a(romC_cart_dout),
-  .enable_a(romC_cs & cart_loaded),  // if no cart, no enable, so we can dismount it for real
+  .enable_a(romC_cs & cart_in),  // if no cart, no enable, so we can dismount it for real
 
   .clock_b(clk),
-  .address_b(ioctl_addr[13:0]),
-  .data_b(ioctl_data),
-  .wren_b(ioctl_wr & load_cart)
+  .address_b(cart_wr ? cart_wr_addr : ioctl_addr[13:0]),
+  .data_b(cart_wr ? cart_wr_data : ioctl_data),
+  .wren_b((ioctl_wr & load_cart) | cart_wr)
 );
 
 
@@ -580,7 +594,7 @@ pia6520 pia1(
   .ca1_in(dragon64?1'b1:1'b0), // from dragon64 schematic - this should be held high
   .ca2_in(),
 //  .cb1_in(cart_loaded & reset_n & clk_Q), // cartridge inserted
-  .cb1_in(disk_cart_enabled & dragon ? cart_firq : cart_loaded & reset_n & clk_Q), // cartridge inserted 
+  .cb1_in(disk_cart_enabled & dragon ? cart_firq : cart_in & reset_n & clk_Q), // cartridge inserted 
   .cb2_in(),
   .ca2_out(cas_relay),
   .cb2_out(snden),
@@ -828,6 +842,7 @@ assign   wd1793_data_read =    (io_cs && dragon_addr2);
 assign   wd1793_read =        (cpu_rw && io_cs && dragon_addr2 && (clk_E || clk_Q));
 assign   wd1793_write =        (~cpu_rw && io_cs && dragon_addr2 && WR_CK_ENA);
 
+generate if (DISK) begin : g_fdc
 fdc coco_fdc(
     .CLK(clk),                     // clock
 	 .dragon(dragon),
@@ -868,6 +883,13 @@ fdc coco_fdc(
     .sd_buff_wr(sd_buff_wr)
 
 );
+end else begin : g_no_fdc
+    // No floppy controller: disk I/O reads $FF, no NMI/HALT/FIRQ from it.
+    assign io_out    = 8'hFF;
+    assign nmi       = 1'b0;
+    assign fdc_halt  = 1'b0;
+    assign cart_firq = 1'b0;
+end endgenerate
 
 
 

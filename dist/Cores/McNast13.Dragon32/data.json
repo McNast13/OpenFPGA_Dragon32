@@ -8,7 +8,9 @@
                 "required": true,
                 "parameters": 10,
                 "filename": "boot.rom",
-                "extensions": ["rom"],
+                "extensions": [
+                    "rom"
+                ],
                 "address": "0x00000000"
             },
             {
@@ -17,8 +19,22 @@
                 "required": false,
                 "parameters": 11,
                 "filename": "",
-                "extensions": ["cas"],
+                "extensions": [
+                    "cas"
+                ],
                 "address": "0x10000000"
+            },
+            {
+                "name": "Cartridge",
+                "id": 2,
+                "required": false,
+                "parameters": 11,
+                "filename": "",
+                "extensions": [
+                    "rom",
+                    "ccc"
+                ],
+                "address": "0x20000000"
             }
         ]
     }
