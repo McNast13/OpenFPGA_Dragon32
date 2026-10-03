@@ -1420,3 +1420,8 @@ zero torn pixels, zero misplaced pixels, no repeated or skipped frames.
 NTSC (PAL=0, 58.67 Hz) is faster than this can follow - it would wander
 between 209 and 230 lines. Needs retuning if the PAL/NTSC menu option
 is ever added.
+
+CI build (run 37118983325): timing met - clk_dragon setup +1.960 ns
+(up from +0.676 ns; fitter variation, the changed logic is all on the
+12.288 MHz side), hold +0.204 ns, all TNS 0. M10K 308/308, ALMs 26%.
+Awaiting hardware test.
