@@ -22,8 +22,8 @@ an on-screen keyboard. Tested on real hardware, docked and undocked.
    code) and `RUN` / `EXEC`.
 4. Cartridge images (`.rom` / `.ccc`, 8K or 16K) also go in
    `Assets/dragon32/common/`. Load one from the core's Cartridge slot: the
-   Dragon resets and the cartridge starts. Relaunch the core to go back to
-   BASIC.
+   Dragon resets and the cartridge starts. **Eject Cartridge** in the core's
+   menu takes it out again and resets back to BASIC.
 
 ## Not yet supported
 

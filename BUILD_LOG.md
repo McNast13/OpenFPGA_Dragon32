@@ -1616,3 +1616,13 @@ the hardware-tested cartridge build (clk_dragon +1.524 ns, hold
 +0.211 ns, M10K 307/308); bitstream bytes differ only by the per-build
 ID that apf/build_id_gen.tcl stamps in. Published as GitHub release
 v1.0.0 (Dragon32-pocket-core-v1.0.0.zip), marked latest.
+
+## 2026-10-03 — Eject Cartridge menu action (branch `cart-eject`)
+
+interact.json gets an "Eject Cartridge" action (writes 0xF0000000, the
+same action pattern as the Amiga core's "Reset Amiga"). core_top treats
+any bridge write to that address as eject - the value is ignored, so it
+doesn't matter whether the platform read-modify-writes it (our bridge
+read mux returns 0 there). The write toggles a bit on clk_74a, synch_3'd
+into clk_dragon; an edge clears cart_present and starts the same 20 ms
+Dragon reset as a cartridge load, so the machine comes back up in BASIC.

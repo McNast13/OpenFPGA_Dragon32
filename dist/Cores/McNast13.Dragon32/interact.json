@@ -1,7 +1,17 @@
 {
     "interact": {
         "magic": "APF_VER_1",
-        "variables": [],
+        "variables": [
+            {
+                "name": "Eject Cartridge",
+                "id": 1,
+                "type": "action",
+                "enabled": true,
+                "address": "0xF0000000",
+                "value": 1,
+                "mask": "0xFFFFFFFE"
+            }
+        ],
         "messages": []
     }
 }
