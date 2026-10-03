@@ -5,17 +5,26 @@ built by trimming the MiSTer CoCo2/Dragon core down to Dragon 32 only and
 replacing its MiSTer-specific plumbing with Analogue Platform Framework (APF)
 equivalents.
 
-Status: not started. See [docs/PLAN.md](docs/PLAN.md) for the full plan,
-[NOTES.md](NOTES.md) for the hardware/RTL inventory (phase 0), and
-[BUILD_LOG.md](BUILD_LOG.md) for build results once they start.
+A UK Dragon 32: real speed (0.89 MHz 6809), 50 Hz PAL frame timing, sound,
+cassette loading, joystick, and keyboard input from a docked USB keyboard or
+an on-screen keyboard. Tested on real hardware, docked and undocked.
 
-## Goal (v1)
+## Installing
 
-- Boots to Dragon BASIC with correct video, sound and keyboard input
-- Loads the Dragon 32 boot ROM from the SD card at startup
-- Loads tape images (`.CAS`) and cartridge images (`.ROM`) through Pocket
-  data slots
-- Maps the Pocket d-pad and buttons to a joystick, plus a working way to type
+1. Download the latest release zip from
+   [Releases](https://github.com/McNast13/OpenFPGA_Dragon32/releases) and
+   copy its `Cores`, `Platforms` and `Assets` folders to the root of the
+   Pocket's SD card.
+2. Supply your own Dragon 32 BASIC ROM (16 KB), named `boot.rom`, in
+   `Assets/dragon32/McNast13.Dragon32/`. It is not included.
+3. Put cassette images (`.cas`) in `Assets/dragon32/common/`, load one
+   through the core's menu, then type `CLOAD` (BASIC) or `CLOADM` (machine
+   code) and `RUN` / `EXEC`.
+
+## Not yet supported
+
+Cartridges, disks (DragonDOS/VDK), tape saving, save states, Dragon 64 and
+CoCo modes, NTSC 60 Hz.
 
 ## Controls
 
@@ -27,9 +36,6 @@ Status: not started. See [docs/PLAN.md](docs/PLAN.md) for the full plan,
   of the screen. The joystick doesn't see the d-pad or A while it's open.
 - **USB keyboard (docked):** mostly positional, like the Dragon's own keys.
   `=` and Shift+`=` give `=` and `+`; keypad `*` and `+` give `*` and `+`.
-
-Later: disk support (DragonDOS, VDK), tape saving, save states, Dragon 64 and
-CoCo modes, Analogizer video.
 
 ## Not included
 
@@ -53,7 +59,13 @@ zip as a workflow artifact — following the pattern already proven in
 
 ## Licensing
 
-Not yet confirmed — check the upstream `CoCo2_MiSTer` LICENSE before vendoring
-any of its source. agg23's IP is MIT. Analogue's own APF files carry their
-own agreement in their headers; keep every header intact. Never distribute a
-Dragon ROM or commercial games with this core.
+GPL-2.0-or-later (see [LICENSE](LICENSE)), following the upstream
+CoCo2_MiSTer core's top-level `CoCo2.sv`. Upstream files keep their own
+headers: some are BSD-style (`pia6520.v`, `fdc.sv`, `Cassette_Write.sv`) or
+GPL (`CPU09`), and `mc6809i.v` (Greg Miller) and `dac.sv` carry a copyright
+notice without explicit licence terms - used as-is from upstream.
+`apf2hid.sv` and `pocket_utils/` are MIT. Analogue's APF framework files
+(`src/fpga/apf/`) are under Analogue's own agreement in their headers.
+See [NOTES.md](NOTES.md) for the full per-file review.
+
+Never distribute a Dragon ROM or commercial games with this core.

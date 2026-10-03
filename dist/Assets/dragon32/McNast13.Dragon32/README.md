@@ -1,4 +1,7 @@
-Place your own Dragon 32 boot ROM here once phase 1 adds a data slot for it
-(expected filename: `boot.rom`, per the ZX-Spectrum precedent's convention —
-confirm the exact name against `data.json` once it's filled in). Never commit
-a ROM file to this repo.
+Put your own Dragon 32 boot ROM in this folder, named `boot.rom`
+(16 KB, the standard Dragon 32 BASIC ROM). It is not included - Dragon
+ROMs are copyrighted.
+
+Cassette images (`.cas`) go in `Assets/dragon32/common/` and are loaded
+through the core's menu (the Cassette slot), then `CLOAD` or
+`CLOADM` in BASIC.

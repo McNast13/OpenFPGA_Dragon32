@@ -59,8 +59,9 @@ jobs:
 
       - name: Package release zip
         run: |
+          cp LICENSE stage/LICENSE.txt
           cd stage
-          zip -r ../Dragon32-pocket-core.zip Cores Platforms Assets
+          zip -r ../Dragon32-pocket-core.zip Cores Platforms Assets LICENSE.txt
 
       - name: Upload release zip
         uses: actions/upload-artifact@v4

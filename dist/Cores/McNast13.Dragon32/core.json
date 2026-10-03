@@ -2,13 +2,15 @@
     "core": {
         "magic": "APF_VER_1",
         "metadata": {
-            "platform_ids": ["dragon32"],
+            "platform_ids": [
+                "dragon32"
+            ],
             "shortname": "Dragon32",
-            "description": "Dragon 32-only port of the MiSTer CoCo2/Dragon core. Phase 0: test pattern only, no machine yet.",
+            "description": "Dragon 32 (UK, 50 Hz), from the MiSTer CoCo2/Dragon core",
             "author": "McNast13",
-            "url": "",
-            "version": "0.1.0",
-            "date_release": "2026-09-26"
+            "url": "https://github.com/McNast13/OpenFPGA_Dragon32",
+            "version": "0.9.0",
+            "date_release": "2026-10-03"
         },
         "framework": {
             "target_product": "Analogue Pocket",
