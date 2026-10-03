@@ -1425,3 +1425,21 @@ CI build (run 37118983325): timing met - clk_dragon setup +1.960 ns
 (up from +0.676 ns; fitter variation, the changed logic is all on the
 12.288 MHz side), hold +0.204 ns, all TNS 0. M10K 308/308, ALMs 26%.
 Awaiting hardware test.
+
+### Hardware test: one-frame black dropout, docked and undocked — fixed
+
+User saw a brief one-frame black dropout, both docked and undocked.
+Cause: the occasional 209-line frame (the drift correction) - the
+scaler blanks a frame whenever the frame length changes. Fix: run the
+read side from clk_dragon/16 (3.5795 MHz) instead of clk_core_12288.
+A PAL Dragon frame is 309 x 464 x 8 = 1,147,008 clk_dragon cycles =
+16 x 348 dots x 206 lines exactly, so every frame is now exactly 206
+lines and never needs correcting; the lock (end the frame at the first
+line boundary after the write side's frame-start pulse, if in its last
+two lines, else run to 230) only acts at power-on/reset. dot_clk_90 is a
+registered divider output 4 clk_dragon cycles after dot_clk. The 12.288
+MHz PLL stays in core_top (unused by video now).
+
+Sim (same testbench, 3 s): 230, 209, then 206 lines every frame; pulse
+lands at line 205 dot 52 every frame (well clear of the boundary); 149
+in / 149 out, zero torn/misplaced pixels, dot_clk_90 exactly 90 degrees.
