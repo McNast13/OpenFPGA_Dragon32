@@ -1503,3 +1503,4 @@ CI build (run 37123787609): timing met - clk_dragon setup +0.822 ns
 OSD: fitter placement shifted with the extra logic), hold +0.204 ns, all
 TNS 0. ALMs 28% (was 26%), M10K 308/308 unchanged. No new critical
 warnings (same 11 in map as before). Not installed yet - awaiting go-ahead.
+Installed on the SD card, all files MD5-verified (bitstream.rbf_r b506c706...). Awaiting hardware test.
