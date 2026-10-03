@@ -49,6 +49,11 @@ module dragoncoco #(
   input  [7:0] hid_sc4,
   input  [7:0] hid_sc5,
   input  [7:0] hid_sc6,
+  // on-screen keyboard key (osd_keyboard.sv) - see dragon_keyboard.sv
+  input        osd_key_valid,
+  input  [2:0] osd_key_row,
+  input  [2:0] osd_key_col,
+  input        osd_shift,
 
   // joystick input
   // digital for buttons
@@ -713,6 +718,10 @@ dragon_keyboard kb(
 .hid_sc4(hid_sc4),
 .hid_sc5(hid_sc5),
 .hid_sc6(hid_sc6),
+.osd_key_valid(osd_key_valid),
+.osd_key_row(osd_key_row),
+.osd_key_col(osd_key_col),
+.osd_shift(osd_shift),
 .addr(kb_cols),
 .kb_rows(kb_rows),
 .joystick_1_button(joy1[4]),

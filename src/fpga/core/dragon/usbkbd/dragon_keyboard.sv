@@ -63,6 +63,13 @@ module dragon_keyboard (
     input  wire  [7:0] hid_sc5,
     input  wire  [7:0] hid_sc6,
 
+    // On-screen keyboard (osd_keyboard.sv): one matrix key plus Shift,
+    // ORed in alongside the USB keyboard.
+    input  wire        osd_key_valid,
+    input  wire  [2:0] osd_key_row,
+    input  wire  [2:0] osd_key_col,
+    input  wire        osd_shift,
+
     input  wire  [7:0] addr,      // kb_cols from PIA0 port B (active-low column select)
     output reg   [7:0] kb_rows,   // to PIA0 port A (active-low row readback)
 
@@ -208,6 +215,9 @@ module dragon_keyboard (
 
         if ((shift_held && !any_shift_suppressed) || any_shift_forced)
             pressed[7][6] = 1'b1; // Dragon SHIFT: row6 col7
+
+        if (osd_key_valid) pressed[osd_key_col][osd_key_row] = 1'b1;
+        if (osd_shift)     pressed[7][6] = 1'b1;
 
         kb_rows = 8'hFF;
         for (r = 0; r < 7; r = r + 1)

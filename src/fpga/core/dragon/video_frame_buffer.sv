@@ -49,6 +49,11 @@ module video_frame_buffer (
     // wr_x/wr_y.
     input  wire        wr_overlay_en,
     input  wire [23:0] wr_overlay_color,
+    // the active-area position of the next pixel to be written, so a
+    // caller can compute its overlay a few clocks ahead (pixels come every
+    // 8 wr_clk cycles) - see osd_keyboard.sv
+    output wire [7:0]  wr_next_x,
+    output wire [7:0]  wr_next_y,
 
     // read side - scaler output. dot_clk (wr_clk/16, ~3.58MHz, below) is
     // also the video_rgb_clock the scaler should be given - see
@@ -75,6 +80,9 @@ module video_frame_buffer (
     reg        fb_wren = 1'b0;
     reg [15:0] fb_wraddr;
     reg [23:0] fb_wrdata;
+
+    assign wr_next_x = wr_x[7:0];
+    assign wr_next_y = wr_y[7:0];
 
     // Toggles as the first pixel of each frame's first active line is
     // written - the read side's frame lock (below) watches for it.

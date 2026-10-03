@@ -816,19 +816,43 @@ synch_3 #(.WIDTH(32)) s_cont2_joy (cont2_joy, cont2_joy_s, clk_dragon);
 // file's own port list, above) doesn't match dragoncoco's right/left/
 // down/up joy_use_dpad convention, but that mode isn't used here at all
 // (joy_use_dpad tied to 0 below) - only this file's own mux matters.
-    wire [7:0] joy1_x = cont1_key_s[3] ? 8'd255 : cont1_key_s[2] ? 8'd0 : cont1_joy_s[7:0];
-    wire [7:0] joy1_y = cont1_key_s[1] ? 8'd255 : cont1_key_s[0] ? 8'd0 : cont1_joy_s[15:8];
+//
+// While the on-screen keyboard is open it owns controller 1's d-pad and A
+// (fire) - cont1_key_game is what the joystick sees.
+    wire        osd_active;
+    wire [31:0] cont1_key_game = osd_active ? (cont1_key_s & ~32'h0000_001F) : cont1_key_s;
+    wire [7:0] joy1_x = cont1_key_game[3] ? 8'd255 : cont1_key_game[2] ? 8'd0 : cont1_joy_s[7:0];
+    wire [7:0] joy1_y = cont1_key_game[1] ? 8'd255 : cont1_key_game[0] ? 8'd0 : cont1_joy_s[15:8];
     wire [7:0] joy2_x = cont2_key_s[3] ? 8'd255 : cont2_key_s[2] ? 8'd0 : cont2_joy_s[7:0];
     wire [7:0] joy2_y = cont2_key_s[1] ? 8'd255 : cont2_key_s[0] ? 8'd0 : cont2_joy_s[15:8];
 
-// Frame buffer overlay - reserved for the on-screen keyboard (not built
-// yet). video_frame_buffer.sv's wr_overlay_en/wr_overlay_color replace a
-// pixel as the Dragon writes it, so whatever drives them redraws at the
-// machine's own frame rate. Tied off for now; the cassette-debugging
-// diagnostic square that used to drive them has been removed (its job is
-// done - see BUILD_LOG.md 2026-09-27..10-02).
-//
-// To place something on screen: dragon_h_count/v_count are RAW
+// On-screen keyboard (Select toggles it) - see dragon/osd/osd_keyboard.sv.
+// It draws through video_frame_buffer.sv's wr_overlay_en/wr_overlay_color,
+// which replace a pixel as the Dragon writes it, working from the frame
+// buffer's own write position (fb_next_x/y) rather than the raw VDG
+// counters below. Its key goes into dragon_keyboard.sv via dragoncoco.
+    wire [7:0]  fb_next_x, fb_next_y;
+    wire        fb_overlay_en;
+    wire [23:0] fb_overlay_color;
+    wire        osd_key_valid, osd_shift;
+    wire [2:0]  osd_key_row, osd_key_col;
+
+osd_keyboard osd (
+    .clk        ( clk_dragon ),
+    .btn        ( cont1_key_s[15:0] ),
+    .vsync      ( dragon_vsync ),
+    .px_x       ( fb_next_x ),
+    .px_y       ( fb_next_y ),
+    .ov_en      ( fb_overlay_en ),
+    .ov_color   ( fb_overlay_color ),
+    .active     ( osd_active ),
+    .key_valid  ( osd_key_valid ),
+    .key_row    ( osd_key_row ),
+    .key_col    ( osd_key_col ),
+    .key_shift  ( osd_shift )
+);
+
+// To place something on screen by raster position instead: dragon_h_count/v_count are RAW
 // mc6847pace counters spanning the whole raster (porches/sync/border/
 // video), not relative to the active window. H_LEFT_BORDER=148/
 // H_VIDEO=404 and V2_TOP_BORDER=43/V2_VIDEO=235 (mc6847pace.vhd's own
@@ -837,8 +861,6 @@ synch_3 #(.WIDTH(32)) s_cont2_joy (cont2_joy, cont2_joy_s, clk_dragon);
 // NTSC timing. (With PAL=1 (below), as now, the V values are 23 lines further down:
 // V2_TOP_BORDER=66, V2_VIDEO=258 - see mc6847pace.vhd's PAL_PAD.)
     wire [8:0]  dragon_h_count, dragon_v_count;
-    wire        fb_overlay_en    = 1'b0;
-    wire [23:0] fb_overlay_color = 24'h000000;
 
 // PAL=1: UK Dragon 32 50 Hz frame timing (309-line frames, 49.93 Hz) -
 // see mc6847pace.vhd's PAL_PAD and docs/SPEED_PLAN.md step 8.
@@ -880,6 +902,10 @@ dragoncoco #(
     .hid_sc4        ( hid_sc4 ),
     .hid_sc5        ( hid_sc5 ),
     .hid_sc6        ( hid_sc6 ),
+    .osd_key_valid  ( osd_key_valid ),
+    .osd_key_row    ( osd_key_row ),
+    .osd_key_col    ( osd_key_col ),
+    .osd_shift      ( osd_shift ),
 
     // controller input - joy1[4]/joy2[4] are the only bits dragoncoco.sv
     // reads unconditionally (the fire button, wired through to
@@ -887,7 +913,7 @@ dragoncoco #(
     // other bits are only consulted when joy_use_dpad=1, which isn't the
     // case here (joy1_x/y above already fold the d-pad into the analog
     // value), so they're left 0.
-    .joy1           ( {11'b0, cont1_key_s[4], 4'b0} ),
+    .joy1           ( {11'b0, cont1_key_game[4], 4'b0} ),
     .joy2           ( {11'b0, cont2_key_s[4], 4'b0} ),
     .joya1          ( {joy1_x, joy1_y} ),
     .joya2          ( {joy2_x, joy2_y} ),
@@ -966,6 +992,8 @@ video_frame_buffer vid_fb (
 
     .wr_overlay_en    ( fb_overlay_en ),
     .wr_overlay_color ( fb_overlay_color ),
+    .wr_next_x        ( fb_next_x ),
+    .wr_next_y        ( fb_next_y ),
 
     .dot_clk        ( video_dot_clk ),
     .dot_clk_90     ( video_dot_clk_90 ),

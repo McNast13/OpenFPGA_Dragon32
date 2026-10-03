@@ -17,6 +17,17 @@ Status: not started. See [docs/PLAN.md](docs/PLAN.md) for the full plan,
   data slots
 - Maps the Pocket d-pad and buttons to a joystick, plus a working way to type
 
+## Controls
+
+- **D-pad / stick, A:** Dragon joystick and fire button.
+- **Select:** open/close the on-screen keyboard (the Dragon's own layout). While
+  it's open: d-pad moves (hold to repeat), **A** presses the highlighted key
+  (held while A is held), **B** latches Shift for the next key (keys show
+  their shifted symbols), **X** moves the keyboard between the bottom and top
+  of the screen. The joystick doesn't see the d-pad or A while it's open.
+- **USB keyboard (docked):** mostly positional, like the Dragon's own keys.
+  `=` and Shift+`=` give `=` and `+`; keypad `*` and `+` give `*` and `+`.
+
 Later: disk support (DragonDOS, VDK), tape saving, save states, Dragon 64 and
 CoCo modes, Analogizer video.
 
