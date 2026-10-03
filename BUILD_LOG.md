@@ -1516,3 +1516,7 @@ report 0 = hard left (and up). Fix: only use the analog stick when the
 controller type (key[31:28]) is 3, docked controller with analog
 (numbering consistent with apf2hid's keyboard = 4); otherwise centre
 (128), d-pad only.
+
+CI build (run 37125989087): timing met, clk_dragon setup +1.194 ns, hold
++0.209 ns, M10K 308/308. Installed on the card (MD5-verified, bitstream
+...). Awaiting hardware test.
