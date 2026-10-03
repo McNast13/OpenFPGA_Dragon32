@@ -1564,3 +1564,10 @@ review in NOTES.md) and a README licensing section noting the per-file
 exceptions (mc6809i.v/dac.sv have no explicit terms). README rewritten
 (status, install, controls, unsupported). core.json: version 0.9.0,
 current description and repo URL. Release zip now includes LICENSE.txt.
+
+Repo made public (user request). Release build: CI run 37143103025 on
+main ef8a3f2 - timing met (clk_dragon +2.044 ns, vid_dot_clk hold
++0.923 ns), zip has Cores/Platforms/Assets + LICENSE.txt, core.json
+0.9.0. Draft GitHub release v0.9.0 created with the zip attached
+(Dragon32-pocket-core-v0.9.0.zip); not yet published - waiting on the
+user to confirm version and the boot.rom path in the notes.
