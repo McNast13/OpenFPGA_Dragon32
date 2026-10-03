@@ -1611,3 +1611,8 @@ User confirms cartridge loading works on real hardware. Merged to `main`.
 ## 2026-10-03 — release 1.0.0
 
 core.json version 1.0.0 (cartridges were the last original v1 goal).
+Release build: CI run 37152097653 on main 4fe88e9 - timing identical to
+the hardware-tested cartridge build (clk_dragon +1.524 ns, hold
++0.211 ns, M10K 307/308); bitstream bytes differ only by the per-build
+ID that apf/build_id_gen.tcl stamps in. Published as GitHub release
+v1.0.0 (Dragon32-pocket-core-v1.0.0.zip), marked latest.
