@@ -6,7 +6,7 @@ replacing its MiSTer-specific plumbing with Analogue Platform Framework (APF)
 equivalents.
 
 A UK Dragon 32: real speed (0.89 MHz 6809), 50 Hz PAL frame timing, sound,
-cassette loading, joystick, and keyboard input from a docked USB keyboard or
+cassette and cartridge loading, joystick, and keyboard input from a docked USB keyboard or
 an on-screen keyboard. Tested on real hardware, docked and undocked.
 
 ## Installing
@@ -20,10 +20,14 @@ an on-screen keyboard. Tested on real hardware, docked and undocked.
 3. Put cassette images (`.cas`) in `Assets/dragon32/common/`, load one
    through the core's menu, then type `CLOAD` (BASIC) or `CLOADM` (machine
    code) and `RUN` / `EXEC`.
+4. Cartridge images (`.rom` / `.ccc`, 8K or 16K) also go in
+   `Assets/dragon32/common/`. Load one from the core's Cartridge slot: the
+   Dragon resets and the cartridge starts. Relaunch the core to go back to
+   BASIC.
 
 ## Not yet supported
 
-Cartridges, disks (DragonDOS/VDK), tape saving, save states, Dragon 64 and
+Disks (DragonDOS/VDK), tape saving, save states, Dragon 64 and
 CoCo modes, NTSC 60 Hz.
 
 ## Controls
