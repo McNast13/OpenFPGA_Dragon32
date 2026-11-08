@@ -5,3 +5,7 @@ ROMs are copyrighted.
 Cassette images (`.cas`) go in `Assets/dragon32/common/` and are loaded
 through the core's menu (the Cassette slot), then `CLOAD` or
 `CLOADM` in BASIC.
+
+Cartridge images (`.rom` / `.ccc`) also go in `Assets/dragon32/common/`
+and load from the Cartridge slot; Eject Cartridge in the menu removes one.
+`test_cart.rom` is included there as a quick check.
