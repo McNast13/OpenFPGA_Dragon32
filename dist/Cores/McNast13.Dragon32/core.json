@@ -9,8 +9,8 @@
             "description": "Dragon 32 (UK, 50 Hz), from the MiSTer CoCo2/Dragon core",
             "author": "McNast13",
             "url": "https://github.com/McNast13/OpenFPGA_Dragon32",
-            "version": "1.0.0",
-            "date_release": "2026-10-03"
+            "version": "1.0.1",
+            "date_release": "2026-11-08"
         },
         "framework": {
             "target_product": "Analogue Pocket",

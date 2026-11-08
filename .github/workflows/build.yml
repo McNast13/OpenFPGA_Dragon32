@@ -53,6 +53,10 @@ jobs:
         run: |
           mkdir -p stage
           cp -r dist/Cores dist/Platforms dist/Assets stage/
+          # the original test cartridge ships in the package (built from source, *.rom is gitignored)
+          python3 src/fpga/core/dragon/cartridge/testdata/gen_test_cart.py
+          mkdir -p stage/Assets/dragon32/common
+          cp src/fpga/core/dragon/cartridge/testdata/test_cart.rom stage/Assets/dragon32/common/
           python3 tools/rbf_to_rbf_r.py \
             src/fpga/output_files/ap_core.rbf \
             stage/Cores/McNast13.Dragon32/bitstream.rbf_r

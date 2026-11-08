@@ -22,8 +22,10 @@ an on-screen keyboard. Tested on real hardware, docked and undocked.
    code) and `RUN` / `EXEC`.
 4. Cartridge images (`.rom` / `.ccc`, 8K or 16K) also go in
    `Assets/dragon32/common/`. Load one from the core's Cartridge slot: the
-   Dragon resets and the cartridge starts. Relaunch the core to go back to
-   BASIC.
+   Dragon resets and the cartridge starts. **Eject Cartridge** in the core's
+   menu takes it out again and resets back to BASIC. `test_cart.rom` is
+   included there: it should show `CARTRIDGE OK`, a quick check that
+   cartridge loading works.
 
 ## Not yet supported
 
@@ -43,8 +45,10 @@ CoCo modes, NTSC 60 Hz.
 
 ## Not included
 
-No ROMs or software. Supply your own Dragon 32 boot ROM and games, same as
-the upstream MiSTer core requires.
+No ROMs or commercial software. Supply your own Dragon 32 boot ROM and
+games, same as the upstream MiSTer core requires. The only program
+included is `test_cart.rom`, a small original test cartridge written for
+this core (source: `src/fpga/core/dragon/cartridge/testdata/gen_test_cart.py`).
 
 ## Sources
 

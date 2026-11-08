@@ -791,12 +791,32 @@ data_loader #(
     wire [13:0] cart_wr_addr = cart_any_addr[13:0];
     wire [7:0]  cart_wr_data = cart_boot_wr ? cart_boot_wr_data : cart_live_wr_data;
 
+// Eject: interact.json's "Eject Cartridge" action writes to 0xF0000000.
+// Any write there (the value doesn't matter) toggles cart_eject_toggle_74a,
+// synchronised into clk_dragon like the cassette's ready toggle; an edge
+// clears cart_present and resets the Dragon (same 20 ms hold), so it
+// comes back up in BASIC with no cartridge.
+    reg         cart_eject_toggle_74a = 1'b0;
+always @(posedge clk_74a)
+    if (bridge_wr && bridge_addr == 32'hF0000000)
+        cart_eject_toggle_74a <= ~cart_eject_toggle_74a;
+
+    wire        cart_eject_toggle_dragon;
+synch_3 s_cart_eject (cart_eject_toggle_74a, cart_eject_toggle_dragon, clk_dragon);
+    reg         cart_eject_toggle_prev = 1'b0;
+    wire        cart_eject = (cart_eject_toggle_dragon != cart_eject_toggle_prev);
+
     reg         cart_present = 1'b0;
     reg  [14:0] cart_len = 15'd0;           // highest address written + 1, up to 16K
     reg  [20:0] cart_reset_cnt = 21'd0;     // 1,145,454 clk_dragon cycles = 20 ms
     reg         cart_first_wr = 1'b1;       // next write starts a new image
 always @(posedge clk_dragon) begin
-    if (cart_any_wr) begin
+    cart_eject_toggle_prev <= cart_eject_toggle_dragon;
+    if (cart_eject) begin
+        cart_present   <= 1'b0;
+        cart_reset_cnt <= 21'd1_145_454;
+        cart_first_wr  <= 1'b1;
+    end else if (cart_any_wr) begin
         cart_reset_cnt <= 21'd1_145_454;
         cart_present   <= 1'b1;
         if (cart_first_wr) begin

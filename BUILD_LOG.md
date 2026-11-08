@@ -1616,3 +1616,26 @@ the hardware-tested cartridge build (clk_dragon +1.524 ns, hold
 +0.211 ns, M10K 307/308); bitstream bytes differ only by the per-build
 ID that apf/build_id_gen.tcl stamps in. Published as GitHub release
 v1.0.0 (Dragon32-pocket-core-v1.0.0.zip), marked latest.
+
+## 2026-10-03 — Eject Cartridge menu action (branch `cart-eject`)
+
+interact.json gets an "Eject Cartridge" action (writes 0xF0000000, the
+same action pattern as the Amiga core's "Reset Amiga"). core_top treats
+any bridge write to that address as eject - the value is ignored, so it
+doesn't matter whether the platform read-modify-writes it (our bridge
+read mux returns 0 there). The write toggles a bit on clk_74a, synch_3'd
+into clk_dragon; an edge clears cart_present and starts the same 20 ms
+Dragon reset as a cartridge load, so the machine comes back up in BASIC.
+
+CI build (run 37158687379): timing met - clk_dragon setup +1.579 ns,
+hold +0.211 ns, vid_dot_clk hold +0.848 ns; M10K 307/308. Installed on
+the card (12 files MD5-verified, bitstream d9db4a20...). Awaiting
+hardware test.
+
+## 2026-11-08 - v1.0.1 prep
+
+Eject Cartridge hardware-tested OK. New platform banner (user's colour
+RGB565 image converted to the Pocket's greyscale/rotated format) and the
+McNast13 author icon from the NamcoSystem11 core. test_cart.rom now ships
+in the package at Assets/dragon32/common/ - CI generates it from
+gen_test_cart.py (*.rom stays gitignored). core.json 1.0.1, 2026-11-08.
